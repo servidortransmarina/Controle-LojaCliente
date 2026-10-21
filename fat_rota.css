@@ -433,3 +433,61 @@ tr:hover { background-color: #f8f9fa; }
 .modal-btn-ok.btn-sucesso { background: #27ae60; }
 .modal-btn-ok.btn-sucesso:hover { background: #219150; }
 .modal-btn-ok:hover { background: #c0392b; }
+
+/* --- ESTILO DE PROFUNDIDADE PARA OS NÚMEROS DAS TABELAS --- */
+.box-numero {
+  display: inline-block;
+  background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+  border: 1px solid #cbd5e1;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 700;
+  color: #334155;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8);
+  white-space: nowrap;
+}
+.box-numero.positivo {
+  background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%);
+  border-color: #86efac;
+  color: #166534;
+}
+.box-numero.negativo {
+  background: linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%);
+  border-color: #fca5a5;
+  color: #991b1b;
+} 
+
+/* --- ESTILO DE PROFUNDIDADE PARA TEXTOS E DATAS --- */
+.box-info {
+  display: inline-block;
+  background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+  border: 1px solid #cbd5e1;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: #334155;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8);
+  line-height: 1.4;
+  font-size: 12px;
+}
+
+/* --- ESTILOS EXCLUSIVOS PARA IMPRESSÃO --- */
+@media print {
+  body * { visibility: hidden; }
+  #relatorioImpressao, #relatorioImpressao * { visibility: visible; }
+  #relatorioImpressao { 
+    position: absolute; left: 0; top: 0; width: 100%; 
+    padding: 0; margin: 0; font-family: Arial, sans-serif;
+  }
+  .modal-overlay { display: none !important; }
+  .no-print { display: none !important; }
+  
+  .print-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 10pt; }
+  .print-table th, .print-table td { border: 1px solid #000; padding: 6px; text-align: left; }
+  
+  /* Uso do padrão atual para remover o alerta amarelo do editor */
+  .print-table th { 
+    background-color: #f2f2f2 !important; 
+    print-color-adjust: exact; 
+    -webkit-print-color-adjust: exact; 
+  }
+}
