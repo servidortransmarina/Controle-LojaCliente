@@ -50,8 +50,11 @@
       <button class="nav-tab-link" onclick="trocarAba('abaBalancosEscalas', this)">Balanços & Escalas</button>
     </nav>
 
-    <!-- Botão Contato Vermelho -->
-<button class="btn-contato-red" onclick="cAlert('Central de Suporte', 'Sistema de Fechamento de Fretes Transmarina\nAtendimento e Suporte Interno.')">CONTATO</button>
+    <!-- Botões de Ação do Header (Relatório + Contato) -->
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <button type="button" class="btn-padrao" onclick="imprimirRelatorio()" style="width: auto; padding: 12px 20px; font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: 1px; background-color: #2c3e50;">🖨️ RELATÓRIO</button>
+      <button class="btn-contato-red" onclick="cAlert('Central de Suporte', 'Sistema de Fechamento de Fretes Transmarina\\nAtendimento e Suporte Interno.')">CONTATO</button>
+    </div>
 
   </div>
 </header>
@@ -189,6 +192,7 @@
             <thead>
               <tr>
                 <th>Data Registro</th>
+                <th>Depósito e Período</th>
                 <th>Crédito (R$)</th>
                 <th>Faturas (R$)</th>
                 <th>Saldo (R$)</th>
@@ -196,7 +200,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr id="linhaVaziaBalanços"><td colspan="5" style="text-align:center; color:#888;">Nenhum balanço salvo.</td></tr>
+              <tr id="linhaVaziaBalanços"><td colspan="6" style="text-align:center; color:#888;">Nenhum balanço salvo.</td></tr>
             </tbody>
           </table>
         </div>
@@ -429,11 +433,12 @@
       </div>
     </div>
 
-</div> <!-- Fim da div main-container -->
+<!-- ... Resto do seu sistema e Modal Personalizado ... -->
 
-<script src="fat_rota.js"></script>
-</body>
-</html>
+    <!-- CONTAINER INVISÍVEL PARA IMPRESSÃO -->
+    <div id="relatorioImpressao" style="display:none;"></div>
+
+</div> <!-- Fim da div main-container -->
 
 <script src="fat_rota.js"></script>
 </body>
