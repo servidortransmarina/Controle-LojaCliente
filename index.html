@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema Transmarina - Fechamento de Fretes e Ticket Médio</title>
+  <!-- Biblioteca SheetJS para leitura de arquivos Excel (.xlsx) -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="fat_rota.css">
+</head>
+<body>
+
+<!-- 1. Faixa Superior Escura -->
+<div class="topbar-strip"></div>
+
+<!-- 2. Header Estilo Transmarina -->
+<header class="header-transmarina">
+  <div class="header-container">
+    
+    <!-- Logo Oficial Transmarina -->
+    <a href="#" class="brand-logo-wrapper" title="Transmarina">
+      <svg class="brand-logo-svg" viewBox="0 0 240 80" xmlns="http://www.w3.org/2000/svg">
+        <g transform="translate(10, 10)">
+          <path d="M 30,0 L 60,25 L 0,25 Z" fill="#e50914"/>
+          <path d="M 30,60 L 60,35 L 0,35 Z" fill="#e50914"/> 
+          <line x1="12" y1="25" x2="12" y2="10" stroke="#ffffff" stroke-width="2.5"/>
+          <line x1="21" y1="25" x2="21" y2="3" stroke="#ffffff" stroke-width="2.5"/>
+          <line x1="30" y1="25" x2="30" y2="0" stroke="#ffffff" stroke-width="2.5"/>
+          <line x1="39" y1="25" x2="39" y2="3" stroke="#ffffff" stroke-width="2.5"/>
+          <line x1="48" y1="25" x2="48" y2="10" stroke="#ffffff" stroke-width="2.5"/>
+
+          <line x1="12" y1="35" x2="12" y2="50" stroke="#ffffff" stroke-width="2.5"/>
+          <line x1="21" y1="35" x2="21" y2="57" stroke="#ffffff" stroke-width="2.5"/>
+          <line x1="30" y1="35" x2="30" y2="60" stroke="#ffffff" stroke-width="2.5"/>
+          <line x1="39" y1="35" x2="39" y2="57" stroke="#ffffff" stroke-width="2.5"/>
+          <line x1="48" y1="35" x2="48" y2="50" stroke="#ffffff" stroke-width="2.5"/>
+
+          <polygon points="-5,26 65,26 58,34 -12,34" fill="#000000"/>
+          <text x="26" y="32.5" font-family="Arial, Helvetica, sans-serif" font-size="6.5" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="0.8px">TRANSMARINA</text>
+        </g>
+        <text x="80" y="52" font-family="'Arial Black', Impact, sans-serif" font-size="20" font-weight="900" fill="#2b2b2b" letter-spacing="-0.5px">TRANSMARINA</text>
+      </svg>
+    </a>
+
+    <!-- Menu de Abas (Atualizado) -->
+    <nav class="nav-tabs-transmarina">
+      <button class="nav-tab-link active" onclick="trocarAba('abaDashboard', this)">Área de Lançamento</button>
+      <button class="nav-tab-link" onclick="trocarAba('abaResumoPlanilhas', this)">Planilhas (<span id="qtdPlanilhasTab">0</span>)</button>
+      <button class="nav-tab-link" onclick="trocarAba('abaTicketEscala', this)">Ticket & Escala</button>
+      <button class="nav-tab-link" onclick="trocarAba('abaBalancosEscalas', this)">Balanços & Escalas</button>
+    </nav>
+
+    <!-- Botão Contato Vermelho -->
+<button class="btn-contato-red" onclick="cAlert('Central de Suporte', 'Sistema de Fechamento de Fretes Transmarina\nAtendimento e Suporte Interno.')">CONTATO</button>
+
+  </div>
+</header>
+
+<!-- 3. Conteúdo Principal da Aplicação -->
+<div class="main-container">
+
+  <div id="alertaCorte" class="alerta-corte">
+    ⚠️ ATENÇÃO: O total das faturas do período filtrado ultrapassou o crédito antecipado disponível! Risco de prejuízo/corte de cargas.
+  </div>
+
+  <!-- ABA 1: ÁREA DE LANÇAMENTO E CONFRONTO -->
+  <div id="abaDashboard" class="tab-content active">
+    <div class="cards">
+      <div class="card azul">
+        <h3>Total Depositado (Crédito)</h3>
+        <div class="valor" id="txtTotalDepositado">R$ 0,00</div>
+        <div class="resumo-info" id="qtdDepositos">0 lançamento(s)</div>
+      </div>
+      <div class="card vermelho">
+        <h3>Total Faturas (Filtrado)</h3>
+        <div class="valor" id="txtCustoTotal">R$ 0,00</div>
+        <div class="resumo-info" id="qtdLinhasPlanilha">0 registro(s) exibido(s)</div>
+      </div>
+      <div class="card verde" id="cardSaldo">
+        <h3>Saldo Restante</h3>
+        <div class="valor" id="txtSaldoDisponivel">R$ 0,00</div>
+        <div class="resumo-info" id="statusSaldo">Crédito OK</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- Lançamento de Depósito Pré-Pago -->
+      <div class="panel">
+        <h2>1. Lançar Depósito (Sexta-feira)</h2>
+        <form id="formDeposito" onsubmit="adicionarDeposito(event)">
+          <label>Data do Depósito (Opcional)</label>
+          <input type="date" id="dataDeposito">
+          
+          <label>Valor Depositado (R$)*</label>
+          <input type="number" step="0.01" id="valorDeposito" placeholder="Ex: 50000" required>
+          
+          <button type="submit" class="btn-padrao">Adicionar Crédito Pré-Pago</button>
+        </form>
+
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+        <h2>Histórico de Depósitos</h2>
+        <div class="table-container" style="max-height: 220px;">
+          <table id="tabelaDepositos">
+            <thead>
+              <tr><th>Data</th><th>Valor (R$)</th><th>Ação</th></tr>
+            </thead>
+            <tbody>
+              <tr id="linhaVaziaDepositos"><td colspan="3" style="text-align:center; color:#888;">Nenhum depósito cadastrado.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Anexo e Filtros por Semana -->
+      <div class="panel">
+        <h2>2. Anexar Planilha de Fechamento (.xlsx)</h2>
+        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+          Você pode anexar várias planilhas quinzenais.
+        </p>
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+          <input type="file" id="inputArquivoExcel" accept=".xlsx, .xls" multiple style="margin-bottom: 0; flex: 1; min-width: 220px;">
+          <button type="button" class="btn-sucesso" onclick="processarArquivoExcel()" style="width: auto; white-space: nowrap; margin-bottom: 0;">Anexar Planilha</button>
+        </div>
+
+        <!-- Botão para Excluir Planilhas Anexadas -->
+        <div style="text-align: right; margin-bottom: 15px;">
+          <button type="button" class="btn-perigo" onclick="limparPlanilhasAnexadas()" style="width: auto; padding: 10px 18px; font-size: 13px; margin: 0;">🗑️ Excluir Planilha Anexada</button>
+        </div>
+
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+        <h2>3. Filtrar Semana e Salvar Fechamento</h2>
+        <div class="filtro-container">
+          <div class="filtro-group">
+            <label>Data Inicial</label>
+            <input type="date" id="filtroDataInicio" onchange="aplicarFiltros()">
+          </div>
+          <div class="filtro-group">
+            <label>Data Final</label>
+            <input type="date" id="filtroDataFim" onchange="aplicarFiltros()">
+          </div>
+          <div class="filtro-acoes">
+            <button type="button" class="btn-alerta" onclick="limparFiltros()">Limpar Filtro</button>
+            <button type="button" class="btn-sucesso" onclick="salvarFechamentoSemanal()">💾 Salvar Balanço da Semana</button>
+          </div>
+        </div>
+
+        <h2>Dados Extraídos e Confrontados</h2>
+        <div class="table-container">
+          <table id="tabelaCargas">
+            <thead>
+              <tr>
+                <th>Fechamento</th>
+                <th>Carga</th>
+                <th>Data Nota</th>
+                <th>Filial Origem</th>
+                <th>Total Fatura</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="5" style="text-align:center; color:#888;">Aguardando o anexo de planilhas...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+ <!-- ABA UNIFICADA: BALANÇOS SEMANAIS & ESCALAS DIÁRIAS -->
+  <div id="abaBalancosEscalas" class="tab-content">
+    <div class="grid">
+      <!-- LADO ESQUERDO: Balanços Semanais Salvos -->
+      <div class="panel">
+        <h2>Histórico de Balanços Semanais</h2>
+        <p style="font-size: 13px; color: #666;">Confronto de créditos pré-pagos vs faturas.</p>
+
+        <div class="cards" style="margin-top: 15px; margin-bottom: 15px;">
+          <div class="card roxo">
+            <h3>Total Geral (Déficit / Superávit)</h3>
+            <div class="valor" id="txtSomatoriaGeralBalanços">R$ 0,00</div>
+            <div class="resumo-info" id="statusSomatoriaGeral">Saldo Geral Acumulado</div>
+          </div>
+        </div>
+
+        <div class="table-container" style="max-height: 400px;">
+          <table id="tabelaFechamentosSalvos">
+            <thead>
+              <tr>
+                <th>Data Registro</th>
+                <th>Crédito (R$)</th>
+                <th>Faturas (R$)</th>
+                <th>Saldo (R$)</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr id="linhaVaziaBalanços"><td colspan="5" style="text-align:center; color:#888;">Nenhum balanço salvo.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- LADO DIREITO: Escalas Salvas e Ticket Médio Semanal -->
+      <div class="panel">
+        <h2>Consolidado Semanal das Escalas</h2>
+        <p style="font-size: 13px; color: #666;">Gasto diário das escalas abatido do Crédito Pré-Pago.</p>
+
+        <div class="cards">
+          <div class="card azul">
+            <h3>Crédito (Teto)</h3>
+            <div class="valor" id="txtSemanaCreditoTotal">R$ 0,00</div>
+          </div>
+          <div class="card vermelho">
+            <h3>Valor Gasto</h3>
+            <div class="valor" id="txtSemanaCustoTotal">R$ 0,00</div>
+          </div>
+          <div class="card verde" id="cardSemanaSaldoCredito">
+            <h3>Balanço Escalas</h3>
+            <div class="valor" id="txtSemanaSaldoCredito">R$ 0,00</div>
+          </div>
+          <div class="card roxo">
+            <h3>Ticket Médio</h3>
+            <div class="valor" id="txtSemanaTicketMedioGeral">R$ 0,00</div>
+          </div>
+        </div>
+
+        <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+        <div class="table-container" style="max-height: 250px;">
+          <table id="tabelaEscalasDiariasSalvas">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Entregas</th>
+                <th>Custo Previsto</th>
+                <th>Ticket Médio</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr id="linhaVaziaEscalasSalvas"><td colspan="5" style="text-align:center; color:#888;">Nenhuma escala salva.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ABA 3: RESUMO DAS PLANILHAS LANÇADAS -->
+  <div id="abaResumoPlanilhas" class="tab-content">
+    <div class="panel">
+      <h2>Histórico de Planilhas Anexadas</h2>
+      <p style="font-size: 13px; color: #666;">
+        Lista de todas as planilhas quinzenais importadas para o sistema.
+      </p>
+
+      <div class="table-container" style="max-height: 550px;">
+        <table id="tabelaPlanilhasLancadas">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Nome do Arquivo</th>
+              <th>Data do Import</th>
+              <th>Fechamento</th>
+              <th>Qtd Registros</th>
+              <th>Valor Total (R$)</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="7" style="text-align:center; color:#888;">Nenhuma planilha foi lançada ainda.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ABA 4: TICKET MÉDIO E ESCALA DO DIA -->
+  <div id="abaTicketEscala" class="tab-content">
+    <div class="grid">
+      <!-- Cadastro e Edição de Tarifas por Código -->
+      <div class="panel">
+        <h2>1. Cadastrar / Editar Tarifas por Região</h2>
+        <p style="font-size: 12px; color: #666;">
+          Defina o valor por entrega para a faixa de <b>Até 24 Paradas</b> e <b>Acima de 25 Paradas</b>.
+        </p>
+        
+        <form id="formTarifaCodigo" onsubmit="salvarTarifaCodigo(event)">
+          <label>Código da Região*</label>
+          <input type="text" id="inputCodRegiao" placeholder="Ex: 69, 1195, 96, 387" required>
+          
+          <label>Nome / Descrição da Região (Opcional)</label>
+          <input type="text" id="inputNomeCodRegiao" placeholder="Ex: DIVINOPOLIS - COD 69">
+
+          <div style="display: flex; gap: 10px;">
+            <div style="flex: 1;">
+              <label>Até 24 Paradas (R$)*</label>
+              <input type="number" step="0.01" id="inputValorAte24" placeholder="Ex: 72.91" required>
+            </div>
+            <div style="flex: 1;">
+              <label>Acima 25 Paradas (R$)*</label>
+              <input type="number" step="0.01" id="inputValorAcima25" placeholder="Ex: 69.41" required>
+            </div>
+          </div>
+          
+          <button type="submit" class="btn-sucesso">Salvar Tarifa por Faixa</button>
+        </form>
+
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+        <h2>Tarifas Cadastradas (<span id="qtdTarifasBadge">0</span>)</h2>
+        <div class="table-container" style="max-height: 320px;">
+          <table id="tabelaTarifasCodigo">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Descrição</th>
+                <th>Até 24 Paradas</th>
+                <th>Acima 25 Paradas</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr id="linhaVaziaTarifas"><td colspan="5" style="text-align:center; color:#888;">Nenhuma tarifa cadastrada.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Leitor de Escala e Dashboard do Dia -->
+      <div class="panel">
+        <h2>2. Anexar Escala Definitiva do Dia (.xlsx)</h2>
+        <p style="font-size: 12px; color: #666;">
+          Selecione um ou múltiplos arquivos de escala diária (Segure <code>Ctrl</code> para selecionar vários).
+        </p>
+
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+          <!-- ATUALIZAÇÃO: Adicionado 'multiple' para selecionar vários arquivos -->
+          <input type="file" id="inputEscalaExcel" accept=".xlsx, .xls" multiple style="margin-bottom: 0;">
+          <button type="button" class="btn-sucesso" onclick="processarEscalasDefinitivas()" style="width: auto; white-space: nowrap; margin-bottom: 0;">Processar Escala(s)</button>
+        </div>
+
+        <!-- Cards do Resumo da Escala do Dia -->
+        <div class="cards" style="margin-bottom: 15px;">
+          <div class="card azul">
+            <h3>Data da Escala</h3>
+            <div class="valor" id="txtDataEscala" style="font-size: 20px;">-</div>
+            <div class="resumo-info" id="txtQtdCargasEscala">0 carga(s)</div>
+          </div>
+          <div class="card azul">
+            <h3>Total de Entregas</h3>
+            <div class="valor" id="txtTotalEntregasEscala">0</div>
+            <div class="resumo-info">Soma das paradas</div>
+          </div>
+          <div class="card vermelho">
+            <h3>Custo Previsto Escala</h3>
+            <div class="valor" id="txtCustoTotalEscala">R$ 0,00</div>
+            <div class="resumo-info">Tarifa da Faixa x Entregas</div>
+          </div>
+          <div class="card verde">
+            <h3>Ticket Médio do Dia</h3>
+            <div class="valor" id="txtTicketMedioGeralEscala">R$ 0,00</div>
+            <div class="resumo-info">Custo Total / Entregas</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+          <button type="button" class="btn-perigo" onclick="limparEscalaAtual()" style="width: auto; padding: 12px 20px; font-size: 14px; margin: 0;">🗑️ Excluir Lançamentos da Escala</button>
+          <button type="button" class="btn-sucesso" onclick="salvarEscalaDiariaNoHistorico()" style="width: auto; padding: 12px 25px; font-size: 15px; margin: 0;">💾 Salvar Escala do Dia no Histórico</button>
+        </div>
+
+        <h2>Detalhamento Carga por Carga da Escala</h2>
+        <div class="table-container" style="max-height: 380px;">
+          <table id="tabelaEscalaDetalhada">
+            <thead>
+              <tr>
+                <th>Box</th>
+                <th>F. Carga</th>
+                <th>Cód. Região</th>
+                <th>Região de Entrega</th>
+                <th>Entregas</th>
+                <th>Faixa Aplicada</th>
+                <th>Motorista</th>
+                <th>Tarifa Un.</th>
+                <th>Custo Previsto</th>
+                <th>Ticket Médio</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="10" style="text-align:center; color:#888;">Aguardando o anexo da escala do dia...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+
+</div>
+
+<!-- ... Resto do seu sistema acima ... -->
+
+    <!-- CÓDIGO DO MODAL PERSONALIZADO (COLE AQUI) -->
+    <div id="customModalOverlay" class="modal-overlay">
+      <div class="modal-box">
+        <h3 id="modalTitle">Título</h3>
+        <p id="modalMessage">Mensagem</p>
+
+        <div id="modalInputs" style="display:none; text-align: left; margin-bottom: 20px;">
+          <div style="display: flex; gap: 15px;">
+            <div style="flex: 1;">
+              <label id="modalLabel1" style="font-weight: 600; font-size: 13px; margin-bottom: 5px; display: block; color: #444;">Valor 1</label>
+              <input type="text" id="modalInput1" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;">
+            </div>
+            <div style="flex: 1;">
+              <label id="modalLabel2" style="font-weight: 600; font-size: 13px; margin-bottom: 5px; display: block; color: #444;">Valor 2</label>
+              <input type="text" id="modalInput2" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;">
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="modalBtnCancel" class="modal-btn-cancelar" style="display:none;">Cancelar</button>
+          <button id="modalBtnOk" class="modal-btn-ok">OK</button>
+        </div>
+      </div>
+    </div>
+
+</div> <!-- Fim da div main-container -->
+
+<script src="fat_rota.js"></script>
+</body>
+</html>
+
+<script src="fat_rota.js"></script>
+</body>
+</html>
