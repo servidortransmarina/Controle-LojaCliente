@@ -93,7 +93,7 @@ let escalasDiariasSalvas = [];
 let proximoIdEscalaDiaria = 1;
 
 // ==========================================
-// BANCO DE DADOS (NUVEM - GOOGLE SHEETS)
+// BANCO DE DADOS (CACHE LOCAL + NUVEM GOOGLE)
 // ==========================================
 function salvarDadosLocalmente() {
   let dadosSincronizados = {
@@ -102,14 +102,37 @@ function salvarDadosLocalmente() {
     escalasDiariasSalvas, proximoIdEscalaDiaria
   };
 
+  // 1. Salva instantaneamente no cache do navegador (UX Zero Delay)
+  localStorage.setItem('transmarina_bd_cache', JSON.stringify(dadosSincronizados));
+
+  // 2. Envia silenciosamente para o Google Sheets em segundo plano
   fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ chave: "DADOS_SISTEMA_TRANSMARINA", valor: JSON.stringify(dadosSincronizados) })
-  }).then(() => console.log("Salvo na nuvem")).catch(e => console.error(e));
+  }).catch(e => console.error("Aviso: Sincronização em nuvem falhou, mas dados estão salvos localmente.", e));
 }
 
 async function carregarDadosLocais() {
+  // 1. Tenta carregar os dados instantâneos locais primeiro para a tela não ficar vazia
+  let cache = localStorage.getItem('transmarina_bd_cache');
+  if (cache) {
+    let bd = JSON.parse(cache);
+    if (bd.depositos) depositos = bd.depositos;
+    if (bd.proximoIdDeposito) proximoIdDeposito = bd.proximoIdDeposito;
+    if (bd.planilhasLancadas) planilhasLancadas = bd.planilhasLancadas;
+    if (bd.todosRegistrosMaster) todosRegistrosMaster = bd.todosRegistrosMaster;
+    if (bd.proximoIdPlanilha) proximoIdPlanilha = bd.proximoIdPlanilha;
+    if (bd.balancosSemanais) balancosSemanais = bd.balancosSemanais;
+    if (bd.proximoIdBalanco) proximoIdBalanco = bd.proximoIdBalanco;
+    if (bd.tarifasPorCodigo) tarifasPorCodigo = bd.tarifasPorCodigo;
+    if (bd.escalasDiariasSalvas) escalasDiariasSalvas = bd.escalasDiariasSalvas;
+    if (bd.proximoIdEscalaDiaria) proximoIdEscalaDiaria = bd.proximoIdEscalaDiaria;
+    
+    atualizarTelas();
+  }
+
+  // 2. Busca na Nuvem para ver se outro computador atualizou algo
   try {
     let response = await fetch(API_URL);
     let dadosAPI = await response.json();
@@ -117,31 +140,29 @@ async function carregarDadosLocais() {
     if (dadosAPI["DADOS_SISTEMA_TRANSMARINA"]) {
       let bd = JSON.parse(dadosAPI["DADOS_SISTEMA_TRANSMARINA"]);
       if (bd.depositos) depositos = bd.depositos;
-      if (bd.proximoIdDeposito) proximoIdDeposito = bd.proximoIdDeposito;
+      if (bd.balancosSemanais) balancosSemanais = bd.balancosSemanais;
+      // Puxamos todas as outras chaves...
       if (bd.planilhasLancadas) planilhasLancadas = bd.planilhasLancadas;
       if (bd.todosRegistrosMaster) todosRegistrosMaster = bd.todosRegistrosMaster;
-      if (bd.proximoIdPlanilha) proximoIdPlanilha = bd.proximoIdPlanilha;
-      if (bd.balancosSemanais) balancosSemanais = bd.balancosSemanais;
-      if (bd.proximoIdBalanco) proximoIdBalanco = bd.proximoIdBalanco;
       if (bd.tarifasPorCodigo) tarifasPorCodigo = bd.tarifasPorCodigo;
       if (bd.escalasDiariasSalvas) escalasDiariasSalvas = bd.escalasDiariasSalvas;
-      if (bd.proximoIdEscalaDiaria) proximoIdEscalaDiaria = bd.proximoIdEscalaDiaria;
+      
+      // Salva o cache atualizado que veio da internet
+      localStorage.setItem('transmarina_bd_cache', JSON.stringify(bd));
+      atualizarTelas();
     }
-
-    recalcularTotalDepositos();
-    renderizarTabelaDepositos();
-    renderizarTabelaTarifasCodigo();
-    atualizarResumoPlanilhas();
-    renderizarTabelaFechamentosSalvos();
-    aplicarFiltros();
-
   } catch (e) {
-    console.error(e);
-    cAlertError('Aviso de Conexão', "Não foi possível carregar os dados do servidor. O sistema funcionará localmente até a conexão retornar.");
-    recalcularTotalDepositos();
-    renderizarTabelaTarifasCodigo();
-    renderizarTabelaFechamentosSalvos();
+    console.error("Modo Offline Ativo. Usando apenas os dados da memória local.");
   }
+}
+
+function atualizarTelas() {
+  recalcularTotalDepositos();
+  renderizarTabelaDepositos();
+  renderizarTabelaTarifasCodigo();
+  atualizarResumoPlanilhas();
+  renderizarTabelaFechamentosSalvos();
+  aplicarFiltros();
 }
 
 // ==========================================
@@ -505,44 +526,7 @@ async function excluirEscalaSalva(idEscala) {
   }
 }
 
-function renderizarTabelaEscalasSalvas() {
-  let elQtd = document.getElementById('qtdEscalasTab');
-  if (elQtd) elQtd.innerText = escalasDiariasSalvas.length;
 
-  let tbody = document.getElementById('tabelaEscalasDiariasSalvas').getElementsByTagName('tbody')[0];
-  if (!tbody) return;
-  tbody.innerHTML = '';
-
-  let somaCustoSemana = 0, somaEntregasSemana = 0;
-
-  escalasDiariasSalvas.forEach(e => {
-    somaCustoSemana += e.custoTotal;
-    somaEntregasSemana += e.totalEntregas;
-
-    let tr = tbody.insertRow();
-    tr.insertCell(0).innerText = e.dataEscala;
-    tr.insertCell(1).innerText = e.totalEntregas;
-    tr.insertCell(2).innerText = formatarMoeda(e.custoTotal);
-    tr.insertCell(3).innerText = formatarMoeda(e.ticketMedio);
-    tr.insertCell(4).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirEscalaSalva(${e.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
-  });
-
-  if (escalasDiariasSalvas.length === 0) tbody.innerHTML = '<tr id="linhaVaziaEscalasSalvas"><td colspan="5" style="text-align:center; color:#888;">Nenhuma escala salva.</td></tr>';
-
-  let ticketMedioSemanal = somaEntregasSemana > 0 ? (somaCustoSemana / somaEntregasSemana) : 0;
-  let saldoCreditoSemana = totalDepositado - somaCustoSemana;
-
-  let elCred = document.getElementById('txtSemanaCreditoTotal'); if(elCred) elCred.innerText = formatarMoeda(totalDepositado);
-  let elCusto = document.getElementById('txtSemanaCustoTotal'); if(elCusto) elCusto.innerText = formatarMoeda(somaCustoSemana);
-  let elTick = document.getElementById('txtSemanaTicketMedioGeral'); if(elTick) elTick.innerText = formatarMoeda(ticketMedioSemanal);
-  
-  let cardSaldo = document.getElementById('cardSemanaSaldoCredito');
-  let txtSaldo = document.getElementById('txtSemanaSaldoCredito');
-  if(txtSaldo && cardSaldo) {
-    txtSaldo.innerText = formatarMoeda(saldoCreditoSemana);
-    cardSaldo.className = saldoCreditoSemana >= 0 ? "card verde" : "card vermelho";
-  }
-}
 
 // ==========================================
 // FATURAS QUINZENAIS (BALANÇO)
@@ -703,40 +687,68 @@ function atualizarDashboardValores(custoFiltrado, qtdRegistros) {
 }
 
 async function salvarFechamentoSemanal() {
-  let dataInicio = document.getElementById('filtroDataInicio').value, dataFim = document.getElementById('filtroDataFim').value;
-  let periodoTexto = (dataInicio && dataFim) ? `${formatarDataBR(dataInicio)} até ${formatarDataBR(dataFim)}` : (dataInicio ? `A partir de ${formatarDataBR(dataInicio)}` : (dataFim ? `Até ${formatarDataBR(dataFim)}` : "Todas as Datas"));
+  let dataInicio = document.getElementById('filtroDataInicio').value;
+  let dataFim = document.getElementById('filtroDataFim').value;
+
+  // Resgata as datas dos depósitos ativos antes de zerar
+  let datasDepositos = depositos.map(d => d.data).join(', ');
+  let infoDeposito = datasDepositos ? datasDepositos : 'S/ Depósito';
+
+  let periodoTexto = (dataInicio && dataFim) ? `${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}` : (dataInicio ? `A partir de ${formatarDataBR(dataInicio)}` : (dataFim ? `Até ${formatarDataBR(dataFim)}` : "Todas as datas"));
+  
+  // Combina as duas informações com quebra de linha (formato HTML embutido)
+  let periodoCombinado = `<b>Depósito:</b> ${infoDeposito}<br><b>Faturas:</b> ${periodoTexto}`;
+  
   let saldoCalculado = totalDepositado - custoAtualFiltradoGlobal;
 
   let novoBalanco = {
-    id: proximoIdBalanco++, dataRegistro: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
-    periodo: periodoTexto, totalCredito: totalDepositado, totalFaturas: custoAtualFiltradoGlobal, saldo: saldoCalculado
+    id: proximoIdBalanco++, 
+    dataRegistro: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+    periodo: periodoCombinado, 
+    totalCredito: totalDepositado, 
+    totalFaturas: custoAtualFiltradoGlobal, 
+    saldo: saldoCalculado
   };
 
-  balancosSemanais.push(novoBalanco); renderizarTabelaFechamentosSalvos();
-  depositos = []; recalcularTotalDepositos(); renderizarTabelaDepositos();
-  document.getElementById('valorDeposito').value = ''; document.getElementById('dataDeposito').value = '';
-  aplicarFiltros(); salvarDadosLocalmente();
+  balancosSemanais.push(novoBalanco); 
+  
+  depositos = []; 
+  recalcularTotalDepositos(); 
+  renderizarTabelaDepositos();
+  
+  document.getElementById('valorDeposito').value = ''; 
+  document.getElementById('dataDeposito').value = '';
+  
+  aplicarFiltros(); 
+  salvarDadosLocalmente(); // Vai salvar instantâneo
   
   cAlert('Balanço Gerado!', `Fechamento encerrado. Resultado: ${saldoCalculado >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'} de ${formatarMoeda(saldoCalculado)}.\n\nCréditos pré-pagos foram zerados para o próximo ciclo.`);
 }
 
-async function excluirBalancoSemanal(idBal) {
-  let confirma = await cConfirm('Apagar Balanço', 'Deseja excluir este histórico de fechamento? (Não afetará as planilhas extraídas)');
-  if (confirma) {
-    balancosSemanais = balancosSemanais.filter(b => b.id !== idBal);
-    renderizarTabelaFechamentosSalvos(); salvarDadosLocalmente();
+// Função para limpar datas que vêm sujas do Google Sheets
+function formatarDataSimples(dataStr) {
+  if (!dataStr) return '-';
+  if (String(dataStr).includes('GMT') || String(dataStr).includes('Z') || String(dataStr).includes('Horário')) {
+    let d = new Date(dataStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+    }
   }
+  return dataStr;
 }
 
+
 function renderizarTabelaFechamentosSalvos() {
-  let elQtd = document.getElementById('qtdBalançosTab'); if (elQtd) elQtd.innerText = balancosSemanais.length;
+  let elQtd = document.getElementById('qtdBalançosTab'); 
+  if (elQtd) elQtd.innerText = balancosSemanais.length;
+  
   let tbody = document.getElementById('tabelaFechamentosSalvos').getElementsByTagName('tbody')[0];
   if (!tbody) return;
   tbody.innerHTML = '';
   let somatoriaGeral = 0;
 
   if (balancosSemanais.length === 0) {
-    tbody.innerHTML = '<tr id="linhaVaziaBalanços"><td colspan="5" style="text-align:center; color:#888;">Nenhum balanço gerado.</td></tr>';
+    tbody.innerHTML = '<tr id="linhaVaziaBalanços"><td colspan="6" style="text-align:center; color:#888;">Nenhum balanço gerado.</td></tr>';
     let elSomatoria = document.getElementById('txtSomatoriaGeralBalanços'); if (elSomatoria) elSomatoria.innerText = formatarMoeda(0);
     return;
   }
@@ -744,9 +756,22 @@ function renderizarTabelaFechamentosSalvos() {
   balancosSemanais.forEach(b => {
     somatoriaGeral += b.saldo;
     let tr = tbody.insertRow();
-    tr.insertCell(0).innerText = b.dataRegistro; tr.insertCell(1).innerText = formatarMoeda(b.totalCredito); tr.insertCell(2).innerText = formatarMoeda(b.totalFaturas);
-    let cellSaldo = tr.insertCell(3); cellSaldo.innerText = formatarMoeda(b.saldo); if (b.saldo < 0) cellSaldo.style.color = '#c0392b';
-    tr.insertCell(4).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirBalancoSemanal(${b.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
+    
+    // Aplicando fundo com profundidade na data e no período
+    let cellData = tr.insertCell(0);
+    cellData.innerHTML = `<span class="box-info" style="white-space: nowrap; font-weight: 600;">${formatarDataSimples(b.dataRegistro)}</span>`; 
+    
+    let cellPeriodo = tr.insertCell(1);
+    cellPeriodo.innerHTML = `<div class="box-info">${b.periodo || '-'}</div>`;
+
+    tr.insertCell(2).innerHTML = `<span class="box-numero">${formatarMoeda(b.totalCredito)}</span>`; 
+    tr.insertCell(3).innerHTML = `<span class="box-numero">${formatarMoeda(b.totalFaturas)}</span>`;
+    
+    let cellSaldo = tr.insertCell(4);
+    let classeSaldo = b.saldo >= 0 ? 'positivo' : 'negativo';
+    cellSaldo.innerHTML = `<span class="box-numero ${classeSaldo}">${formatarMoeda(b.saldo)}</span>`;
+    
+    tr.insertCell(5).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirBalancoSemanal(${b.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
   });
 
   let elSomatoria = document.getElementById('txtSomatoriaGeralBalanços');
@@ -756,6 +781,186 @@ function renderizarTabelaFechamentosSalvos() {
     cardSomatoria.className = somatoriaGeral >= 0 ? "card verde" : "card vermelho";
   }
 }
+
+function renderizarTabelaEscalasSalvas() {
+  let elQtd = document.getElementById('qtdEscalasTab');
+  if (elQtd) elQtd.innerText = escalasDiariasSalvas.length;
+
+  let tbody = document.getElementById('tabelaEscalasDiariasSalvas').getElementsByTagName('tbody')[0];
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  let somaCustoSemana = 0, somaEntregasSemana = 0;
+
+  escalasDiariasSalvas.forEach(e => {
+    somaCustoSemana += e.custoTotal;
+    somaEntregasSemana += e.totalEntregas;
+
+    let tr = tbody.insertRow();
+    
+    // Aplicando fundo com profundidade na data da escala
+    tr.insertCell(0).innerHTML = `<span class="box-info" style="white-space: nowrap; font-weight: 600;">${formatarDataSimples(e.dataEscala)}</span>`;
+    tr.insertCell(1).innerHTML = `<span style="font-weight: 600; color: #333; font-size: 14px;">${e.totalEntregas}</span>`;
+    
+    tr.insertCell(2).innerHTML = `<span class="box-numero">${formatarMoeda(e.custoTotal)}</span>`;
+    tr.insertCell(3).innerHTML = `<span class="box-numero">${formatarMoeda(e.ticketMedio)}</span>`;
+    
+    tr.insertCell(4).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirEscalaSalva(${e.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
+  });
+
+  if (escalasDiariasSalvas.length === 0) tbody.innerHTML = '<tr id="linhaVaziaEscalasSalvas"><td colspan="5" style="text-align:center; color:#888;">Nenhuma escala salva.</td></tr>';
+
+  let ticketMedioSemanal = somaEntregasSemana > 0 ? (somaCustoSemana / somaEntregasSemana) : 0;
+  let saldoCreditoSemana = totalDepositado - somaCustoSemana;
+
+  let elCred = document.getElementById('txtSemanaCreditoTotal'); if(elCred) elCred.innerText = formatarMoeda(totalDepositado);
+  let elCusto = document.getElementById('txtSemanaCustoTotal'); if(elCusto) elCusto.innerText = formatarMoeda(somaCustoSemana);
+  let elTick = document.getElementById('txtSemanaTicketMedioGeral'); if(elTick) elTick.innerText = formatarMoeda(ticketMedioSemanal);
+  
+  let cardSaldo = document.getElementById('cardSemanaSaldoCredito');
+  let txtSaldo = document.getElementById('txtSemanaSaldoCredito');
+  if(txtSaldo && cardSaldo) {
+    txtSaldo.innerText = formatarMoeda(saldoCreditoSemana);
+    cardSaldo.className = saldoCreditoSemana >= 0 ? "card verde" : "card vermelho";
+  }
+}
+
+// ==========================================
+// FUNÇÃO DE IMPRESSÃO (RELATÓRIO UNIFICADO)
+// ==========================================
+function imprimirRelatorio() {
+  let somatoriaBalanços = balancosSemanais.reduce((acc, b) => acc + b.saldo, 0);
+  let statusGeral = somatoriaBalanços >= 0 ? 'SUPERÁVIT' : 'DÉFICIT';
+  
+  let somaCustoEscala = escalasDiariasSalvas.reduce((acc, e) => acc + e.custoTotal, 0);
+  let somaEntregas = escalasDiariasSalvas.reduce((acc, e) => acc + e.totalEntregas, 0);
+  let ticketMedio = somaEntregas > 0 ? (somaCustoEscala / somaEntregas) : 0;
+  let balancoEscalas = totalDepositado - somaCustoEscala;
+
+  let html = `
+    <div style="display: flex; align-items: center; margin-bottom: 20px;">
+      <h1 style="margin: 0; color: #b10a0a; font-family: 'Arial Black', sans-serif;">TRANSMARINA</h1>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+      <div style="width: 48%;">
+        <h3 style="margin: 0 0 5px 0;">Histórico de Balanços Semanais</h3>
+        <p style="margin: 0 0 10px 0; font-size: 11px; color: #555;">Confronto de créditos pré-pagos vs faturas.</p>
+        <span style="font-size: 11px; font-weight: bold; text-transform: uppercase;">Total Geral (Déficit / Superávit)</span><br>
+        <span style="font-size: 20px; font-weight: bold; color: ${somatoriaBalanços >= 0 ? '#166534' : '#991b1b'};">${formatarMoeda(somatoriaBalanços)} (${statusGeral})</span><br>
+        <span style="font-size: 10px; color: #666;">Saldo Geral Acumulado</span>
+      </div>
+
+      <div style="width: 48%;">
+        <h3 style="margin: 0 0 5px 0;">Consolidado Semanal das Escalas</h3>
+        <p style="margin: 0 0 10px 0; font-size: 11px; color: #555;">Gasto diário das escalas abatido do Crédito Pré-Pago.</p>
+        <div style="display: flex; gap: 20px;">
+          <div>
+            <span style="font-size: 10px; font-weight: bold; text-transform: uppercase;">Crédito (Teto)</span><br>
+            <span style="font-size: 16px; font-weight: bold; color: #0288d1;">${formatarMoeda(totalDepositado)}</span>
+          </div>
+          <div>
+            <span style="font-size: 10px; font-weight: bold; text-transform: uppercase;">Valor Gasto</span><br>
+            <span style="font-size: 16px; font-weight: bold; color: #c0392b;">${formatarMoeda(somaCustoEscala)}</span>
+          </div>
+          <div>
+            <span style="font-size: 10px; font-weight: bold; text-transform: uppercase;">Balanço Escalas</span><br>
+            <span style="font-size: 16px; font-weight: bold; color: ${balancoEscalas >= 0 ? '#166534' : '#991b1b'};">${formatarMoeda(balancoEscalas)}</span>
+          </div>
+        </div>
+        <div style="margin-top: 10px;">
+          <span style="font-size: 10px; font-weight: bold; text-transform: uppercase;">Ticket Médio</span><br>
+          <span style="font-size: 16px; font-weight: bold; color: #8e44ad;">${formatarMoeda(ticketMedio)}</span>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin: 0 0 10px 0;">Detalhamento de Registros Semanais</h3>
+    <table class="print-table">
+      <thead>
+        <tr>
+          <th>Data Registro</th>
+          <th>Depósito e Período</th>
+          <th>Crédito (R$)</th>
+          <th>Faturas (R$)</th>
+          <th>Saldo (R$)</th>
+          <th style="border-left: 2px solid #000;">Data Escala</th>
+          <th>Entregas</th>
+          <th>Custo Previsto</th>
+          <th>Ticket Médio</th>
+          <th>Ação</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  let maxLinhas = Math.max(balancosSemanais.length, escalasDiariasSalvas.length);
+  
+  if (maxLinhas === 0) {
+    html += `<tr><td colspan="10" style="text-align: center;">Nenhum registro encontrado para impressão.</td></tr>`;
+  }
+
+  for (let i = 0; i < maxLinhas; i++) {
+    let b = balancosSemanais[i];
+    let e = escalasDiariasSalvas[i];
+
+    html += `<tr>`;
+    
+    // Lado esquerdo (Balanço com Período separado e Data forçada para DD/MM/ANO)
+    if (b) {
+      // Passa pela função de limpar a data americana primeiro, e depois corta a hora
+      let dataSemHora = b.dataRegistro ? formatarDataSimples(b.dataRegistro).split(' ')[0] : '-';
+      let periodoTxt = b.periodo ? b.periodo.replace(/<br>/g, ' - ').replace(/<b>/g, '').replace(/<\/b>/g, '') : '';
+      
+      html += `
+        <td style="white-space: nowrap;">${dataSemHora}</td>
+        <td><span style="font-size: 10px; color: #444;">${periodoTxt}</span></td>
+        <td>${formatarMoeda(b.totalCredito)}</td>
+        <td>${formatarMoeda(b.totalFaturas)}</td>
+        <td style="color: ${b.saldo >= 0 ? '#166534' : '#991b1b'}; font-weight: bold;">${formatarMoeda(b.saldo)}</td>
+      `;
+    } else {
+      html += `<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>`;
+    }
+
+    // Lado direito (Escala)
+    if (e) {
+      // Faz o mesmo para a data da Escala
+      let dataEscalaLimpa = e.dataEscala ? formatarDataSimples(e.dataEscala).split(' ')[0] : '-';
+      html += `
+        <td style="border-left: 2px solid #000; white-space: nowrap;">${dataEscalaLimpa}</td>
+        <td style="text-align: center;">${e.totalEntregas}</td>
+        <td>${formatarMoeda(e.custoTotal)}</td>
+        <td>${formatarMoeda(e.ticketMedio)}</td>
+        <td style="text-align: center;">-</td>
+      `;
+    } else {
+      html += `<td style="border-left: 2px solid #000;">-</td><td style="text-align: center;">-</td><td>-</td><td>-</td><td style="text-align: center;">-</td>`;
+    }
+
+    html += `</tr>`;
+  }
+
+  html += `</tbody></table>`;
+
+  let containerPrint = document.getElementById('relatorioImpressao');
+  containerPrint.innerHTML = html;
+  containerPrint.style.display = 'block';
+
+  window.print();
+  
+  containerPrint.style.display = 'none';
+}
+
+
+async function excluirBalancoSemanal(idBal) {
+  let confirma = await cConfirm('Apagar Balanço', 'Deseja excluir este histórico de fechamento? (Não afetará as planilhas extraídas)');
+  if (confirma) {
+    balancosSemanais = balancosSemanais.filter(b => b.id !== idBal);
+    renderizarTabelaFechamentosSalvos(); salvarDadosLocalmente();
+  }
+}
+
 
 // Start
 carregarDadosLocais();
