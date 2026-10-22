@@ -351,6 +351,18 @@ function renderizarTabelaTarifasCodigo() {
   });
 }
 
+// Função para a Lupinha de Pesquisa
+function filtrarTarifas() {
+  let termo = document.getElementById('inputPesquisaTarifa').value.toLowerCase();
+  let trs = document.getElementById('tabelaTarifasCodigo').getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+  
+  for (let i = 0; i < trs.length; i++) {
+    if (trs[i].id === 'linhaVaziaTarifas') continue;
+    let textoLinha = trs[i].innerText.toLowerCase();
+    trs[i].style.display = textoLinha.includes(termo) ? '' : 'none';
+  }
+}
+
 // ==========================================
 // PROCESSAMENTO DE ESCALAS DIÁRIAS (.XLSX)
 // ==========================================
@@ -364,7 +376,8 @@ async function processarEscalasDefinitivas() {
   }
 
   let arquivosLidos = 0;
-  let matrizConsolidada = [];
+  // Agora a matriz guardará objetos contendo a linha (row) E a data daquela respectiva planilha
+  let matrizConsolidada = []; 
 
   Array.from(files).forEach((file) => {
     let reader = new FileReader();
@@ -377,21 +390,46 @@ async function processarEscalasDefinitivas() {
         let matrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: "" });
 
         if (matrix && matrix.length > 0) {
-          if (matrizConsolidada.length === 0) {
-            matrizConsolidada = matrix;
-          } else {
-            let idxHeader = matrix.findIndex(r => r.join(' ').toUpperCase().includes('F. CARGA'));
-            let inicio = idxHeader !== -1 ? idxHeader + 1 : 0;
-            matrizConsolidada = matrizConsolidada.concat(matrix.slice(inicio));
+          
+          // 1. Tenta achar a data ESPECÍFICA DESTA PLANILHA lendo as primeiras 15 linhas
+          let dataDestaPlanilha = "-";
+          for (let r = 0; r < Math.min(15, matrix.length); r++) {
+            for (let c = 0; c < matrix[r].length; c++) {
+              let valStr = String(matrix[r][c] || '').trim();
+              if (/\d/.test(valStr) && valStr.length <= 10 && (valStr.includes('.') || valStr.includes('/'))) {
+                dataDestaPlanilha = valStr; 
+                break;
+              }
+            }
+            if (dataDestaPlanilha !== "-") break;
+          }
+
+          // 2. Acha onde está o cabeçalho desta planilha
+          let idxHeader = matrix.findIndex(r => r.join(' ').toUpperCase().includes('F. CARGA'));
+          
+          if (idxHeader !== -1) {
+            // Em vez de mesclar linhas cruas, passamos as linhas e também qual foi a data encontrada e o cabeçalho
+            let cabecalho = matrix[idxHeader];
+            let linhasDeDados = matrix.slice(idxHeader + 1);
+            
+            linhasDeDados.forEach(row => {
+               matrizConsolidada.push({
+                   dataPlanilha: dataDestaPlanilha,
+                   cabecalho: cabecalho,
+                   row: row
+               });
+            });
           }
         }
+        
+      } catch (err) {
+        cAlertError('Erro de Leitura', `Ocorreu um erro ao ler o arquivo ${file.name}:\n${err.message}`);
+      } finally {
         arquivosLidos++;
         if (arquivosLidos === files.length) {
           escalaAtualMatrix = matrizConsolidada;
           recalcularEscalaComTarifas(true);
         }
-      } catch (err) {
-        cAlertError('Erro de Leitura', `Ocorreu um erro ao ler o arquivo ${file.name}:\n${err.message}`);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -399,58 +437,91 @@ async function processarEscalasDefinitivas() {
 }
 
 async function recalcularEscalaComTarifas(exibirAlerta = false) {
-  if (!escalaAtualMatrix) return;
-  let matrix = escalaAtualMatrix;
+  if (!escalaAtualMatrix || escalaAtualMatrix.length === 0) return;
   
-  let dataEscalaDetectada = "-";
-  for (let r = 0; r < Math.min(5, matrix.length); r++) {
-    for (let c = 0; c < matrix[r].length; c++) {
-      let valStr = String(matrix[r][c] || '').trim();
-      if (/\d/.test(valStr) && valStr.length <= 10 && (valStr.includes('.') || valStr.includes('/'))) {
-        dataEscalaDetectada = valStr; break;
-      }
-    }
-    if (dataEscalaDetectada !== "-") break;
-  }
-
-  let idxHeader = matrix.findIndex(r => r.join(' ').toUpperCase().includes('F. CARGA'));
-  if (idxHeader === -1) {
-    if (exibirAlerta) cAlertError('Falha', 'Cabeçalho da escala não localizado (esperado: "F. CARGA" / "COD REGIÕES").');
-    return;
-  }
-
   let itensEscala = [], custoTotalEscala = 0, totalEntregasEscala = 0;
+  // Usamos um Set para listar quantas datas diferentes processamos (para montar o título do painel)
+  let datasEncontradas = new Set(); 
 
-  for (let r = idxHeader + 1; r < matrix.length; r++) {
-    let row = matrix[r];
-    if (!row || row.length < 5) continue;
+  for (let i = 0; i < escalaAtualMatrix.length; i++) {
+    let itemData = escalaAtualMatrix[i];
+    let row = itemData.row;
+    let cabecalho = itemData.cabecalho;
+    
+    if (!row || row.length === 0) continue;
 
-    let box = row[0] !== undefined ? String(row[0]).trim() : '-';
-    let fCarga = row[1] !== undefined ? String(row[1]).trim() : '-';
-    let codRegiao = row[2] !== undefined ? String(row[2]).trim() : '-';
-    let regiaoEntrega = row[3] !== undefined ? String(row[3]).trim() : '-';
-    let paradas = parseInt(row[4]) || 0;
-    let motorista = row[9] !== undefined ? String(row[9]).trim() : '-';
+    // Buscar os índices das colunas de forma dinâmica, pois o layout pode variar
+    let getIndex = (termosBusca) => {
+        return cabecalho.findIndex(c => termosBusca.some(t => String(c).toUpperCase().includes(t)));
+    };
 
-    if (!fCarga || fCarga === '0' || codRegiao === '0' || paradas <= 0 || regiaoEntrega === 'DISPONIVEL') continue;
+    let idxBox = getIndex(['BOX']);
+    let idxFCarga = getIndex(['F. CARGA', 'F.CARGA', 'CARGA']);
+    let idxRegiaoCod = getIndex(['COD REGIÕES', 'COD', 'CÓD', 'CÓDIGO']);
+    let idxRegiaoDesc = getIndex(['REGIÃO DE ENTREGA', 'REGIAO', 'DESCRIÇÃO']);
+    let idxParadas = getIndex(['ENTREGAS', 'PARADAS', 'QTD']);
+    let idxMotorista = getIndex(['MOTORISTA', 'NOME']);
 
+    // Se a coluna não for encontrada dinamicamente, ele chuta a posição padrão anterior
+    let box = (idxBox !== -1 && row[idxBox] !== undefined) ? String(row[idxBox]).trim() : (row[0] !== undefined ? String(row[0]).trim() : '-');
+    let fCarga = (idxFCarga !== -1 && row[idxFCarga] !== undefined) ? String(row[idxFCarga]).trim() : (row[1] !== undefined ? String(row[1]).trim() : '-');
+    let codRegiao = (idxRegiaoCod !== -1 && row[idxRegiaoCod] !== undefined) ? String(row[idxRegiaoCod]).trim() : (row[2] !== undefined ? String(row[2]).trim() : '-');
+    let regiaoEntrega = (idxRegiaoDesc !== -1 && row[idxRegiaoDesc] !== undefined) ? String(row[idxRegiaoDesc]).trim() : (row[3] !== undefined ? String(row[3]).trim() : '-');
+    
+    // Problema 2 Resolvido: Limpa tudo que não for número antes de converter, pra ter a exatidão das paradas
+    let valorParadaStr = (idxParadas !== -1 && row[idxParadas] !== undefined) ? String(row[idxParadas]) : (row[4] !== undefined ? String(row[4]) : '0');
+    let paradas = parseInt(valorParadaStr.replace(/[^0-9]/g, '')) || 0;
+    
+    let motorista = (idxMotorista !== -1 && row[idxMotorista] !== undefined) ? String(row[idxMotorista]).trim() : (row[9] !== undefined ? String(row[9]).trim() : '-');
+
+    // Filtro de exclusão de dados sujos/não relacionados à carga
+    if (!fCarga || fCarga === '0' || fCarga === '-' || codRegiao === '0' || codRegiao === '-' || paradas <= 0 || regiaoEntrega.toUpperCase().includes('DISPONIVEL')) continue;
+
+    // Se tem paradas e F.carga validos, consideramos essa data!
+    if(itemData.dataPlanilha !== "-") datasEncontradas.add(itemData.dataPlanilha);
+
+    // (Dentro do loop for, substitua a validação da tarifa por esta:)
     let tarifaInfo = tarifasPorCodigo[codRegiao];
-    let tarifaUnitaria = tarifaInfo ? (paradas <= 24 ? tarifaInfo.valorAte24 : tarifaInfo.valorAcima25) : 0;
-    let faixaAplicada = tarifaInfo ? (paradas <= 24 ? "Até 24" : "Acima de 25") : "-";
+    
+    let tarifaUnitaria = 0;
+    let faixaAplicada = "SEM CADASTRO"; // Por padrão, se não achar, avisa que não tem
+    
+    if (tarifaInfo) {
+        if (paradas <= 24) {
+            tarifaUnitaria = tarifaInfo.valorAte24;
+            faixaAplicada = "Até 24";
+        } else {
+            tarifaUnitaria = tarifaInfo.valorAcima25;
+            faixaAplicada = "Acima de 25";
+        }
+    }
+    
     let custoCarga = paradas * tarifaUnitaria;
-
     custoTotalEscala += custoCarga;
     totalEntregasEscala += paradas;
 
-    itensEscala.push({ box, fCarga, codRegiao, regiao: regiaoEntrega, paradas, faixaAplicada, motorista, tarifaUnitaria, custoCarga, ticketMedio: custoCarga / paradas });
+    itensEscala.push({ 
+        box, fCarga, codRegiao, regiao: regiaoEntrega, 
+        paradas, faixaAplicada, motorista, 
+        tarifaUnitaria, custoCarga, 
+        ticketMedio: paradas > 0 ? custoCarga / paradas : 0,
+        dataAssociada: itemData.dataPlanilha
+    });
   }
 
+  // Título da Data (mostra as datas separadas por vírgula se forem várias, ex: "15/10, 16/10")
+  let tituloDatas = datasEncontradas.size > 0 ? Array.from(datasEncontradas).join(', ') : new Date().toLocaleDateString('pt-BR');
+
   escalaAtualCalculada = {
-    dataEscala: dataEscalaDetectada !== '-' ? dataEscalaDetectada : new Date().toLocaleDateString('pt-BR'),
-    qtdCargas: itensEscala.length, totalEntregas: totalEntregasEscala, custoTotal: custoTotalEscala,
-    ticketMedioGeral: totalEntregasEscala > 0 ? custoTotalEscala / totalEntregasEscala : 0, itens: itensEscala
+    dataEscala: tituloDatas,
+    qtdCargas: itensEscala.length, 
+    totalEntregas: totalEntregasEscala, 
+    custoTotal: custoTotalEscala,
+    ticketMedioGeral: totalEntregasEscala > 0 ? custoTotalEscala / totalEntregasEscala : 0, 
+    itens: itensEscala
   };
 
+  // Atualiza painel do frontend
   document.getElementById('txtDataEscala').innerText = escalaAtualCalculada.dataEscala;
   document.getElementById('txtQtdCargasEscala').innerText = `${escalaAtualCalculada.qtdCargas} carga(s)`;
   document.getElementById('txtTotalEntregasEscala').innerText = escalaAtualCalculada.totalEntregas;
@@ -467,14 +538,26 @@ async function recalcularEscalaComTarifas(exibirAlerta = false) {
     tr.insertCell(2).innerHTML = `<span class="badge-codigo">Cód. ${item.codRegiao}</span>`;
     tr.insertCell(3).innerText = item.regiao;
     tr.insertCell(4).innerText = item.paradas;
-    tr.insertCell(5).innerHTML = item.faixaAplicada === "Até 24" ? `<span class="badge-faixa1">Até 24</span>` : (item.faixaAplicada === "Acima de 25" ? `<span class="badge-faixa2">Acima 25</span>` : "-");
-    tr.insertCell(6).innerText = item.motorista;
+// Substitua a linha do tr.insertCell(5) por esta:
+    if (item.faixaAplicada === "Até 24") {
+        tr.insertCell(5).innerHTML = `<span class="badge-faixa1">Até 24</span>`;
+    } else if (item.faixaAplicada === "Acima de 25") {
+        tr.insertCell(5).innerHTML = `<span class="badge-faixa2">Acima 25</span>`;
+    } else {
+        tr.insertCell(5).innerHTML = `<span style="background:#f8d7da; color:#721c24; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:bold;">⚠️ NÃO CADASTRADO</span>`;
+    }    tr.insertCell(6).innerText = item.motorista;
     tr.insertCell(7).innerText = formatarMoeda(item.tarifaUnitaria);
     tr.insertCell(8).innerText = formatarMoeda(item.custoCarga);
     tr.insertCell(9).innerText = formatarMoeda(item.ticketMedio);
   });
 
-  if (exibirAlerta) cAlert('Sucesso!', `Foram processadas ${itensEscala.length} cargas resultando em ${totalEntregasEscala} entregas totais.`);
+  if (exibirAlerta) {
+    if(datasEncontradas.size > 1) {
+       cAlert('Várias Escalas Importadas', `Foram processadas ${itensEscala.length} cargas resultando em ${totalEntregasEscala} entregas.\nDatas importadas: ${tituloDatas}`);
+    } else {
+       cAlert('Sucesso!', `Foram processadas ${itensEscala.length} cargas resultando em ${totalEntregasEscala} entregas totais.`);
+    }
+  }
 }
 
 async function limparEscalaAtual() {
