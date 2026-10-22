@@ -312,9 +312,16 @@
           <button type="submit" class="btn-sucesso">Salvar Tarifa por Faixa</button>
         </form>
 
-        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+       <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
 
         <h2>Tarifas Cadastradas (<span id="qtdTarifasBadge">0</span>)</h2>
+        
+        <!-- NOVA BARRA DE PESQUISA (LUPINHA) -->
+        <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+          <span style="font-size: 16px;">🔍</span>
+          <input type="text" id="inputPesquisaTarifa" placeholder="Pesquisar por Código (Ex: 252) ou Nome da Região..." onkeyup="filtrarTarifas()" style="margin-bottom: 0; flex: 1; border: none; outline: none; background: transparent; font-size: 14px;">
+        </div>
+
         <div class="table-container" style="max-height: 320px;">
           <table id="tabelaTarifasCodigo">
             <thead>
