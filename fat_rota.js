@@ -748,11 +748,37 @@ function renderizarTabelaCargas(registros) {
   registros.forEach(r => {
     custoAtualFiltradoGlobal += r.totalFatura;
     let tr = tbody.insertRow();
-    tr.insertCell(0).innerText = r.fechamento; tr.insertCell(1).innerText = r.carga; tr.insertCell(2).innerText = formatarDataBR(r.dataNotaISO);
+    tr.insertCell(0).innerText = r.fechamento; 
+    tr.insertCell(1).innerText = r.carga; 
+    
+    // CORREÇÃO DA DATA: Lê o formato gigante (Sun Aug 16...) e converte para DD/MM/AAAA
+    let dataFormatada = '-';
+    if (r.dataNotaISO) {
+      if (String(r.dataNotaISO).includes('GMT') || String(r.dataNotaISO).includes('Z') || String(r.dataNotaISO).includes('Horário') || String(r.dataNotaISO).match(/[a-zA-Z]/)) {
+        let d = new Date(r.dataNotaISO);
+        if (!isNaN(d.getTime())) {
+          dataFormatada = d.toLocaleDateString('pt-BR');
+        } else {
+          dataFormatada = formatarDataBR(r.dataNotaISO);
+        }
+      } else {
+        dataFormatada = formatarDataBR(r.dataNotaISO);
+      }
+    }
+    
+    tr.insertCell(2).innerText = dataFormatada;
+    
     tr.insertCell(3).innerHTML = `<span class="badge-filial">Filial ${r.filialOrigem}</span>`;
-    let cellFatura = tr.insertCell(4); cellFatura.innerText = formatarMoeda(r.totalFatura);
-    if (r.totalFatura < 0) { cellFatura.style.color = '#c0392b'; cellFatura.style.fontWeight = 'bold'; }
+    
+    let cellFatura = tr.insertCell(4); 
+    cellFatura.innerText = formatarMoeda(r.totalFatura);
+    
+    if (r.totalFatura < 0) { 
+      cellFatura.style.color = '#c0392b'; 
+      cellFatura.style.fontWeight = 'bold'; 
+    }
   });
+  
   atualizarDashboardValores(custoAtualFiltradoGlobal, registros.length);
 }
 
