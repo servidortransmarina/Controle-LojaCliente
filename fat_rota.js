@@ -722,39 +722,69 @@ function atualizarResumoPlanilhas() {
   });
 }
 
-function aplicarFiltros() {
-  let dataInicio = document.getElementById('filtroDataInicio').value;
-  let dataFim = document.getElementById('filtroDataFim').value;
+// Variável de controle para o atraso (Debounce)
+let timeoutFiltro = null;
 
-  let registrosFiltrados = todosRegistrosMaster.filter(r => {
-    if (!r.dataNotaISO) return true;
-    if (dataInicio && r.dataNotaISO < dataInicio) return false;
-    if (dataFim && r.dataNotaISO > dataFim) return false;
-    return true;
-  });
-  renderizarTabelaCargas(registrosFiltrados);
+function aplicarFiltros() {
+  // Limpa o temporizador se o usuário ainda estiver digitando
+  clearTimeout(timeoutFiltro);
+  
+  // Aguarda 400 milissegundos após o último clique/tecla para processar
+  timeoutFiltro = setTimeout(() => {
+    let dataInicio = document.getElementById('filtroDataInicio').value;
+    let dataFim = document.getElementById('filtroDataFim').value;
+
+    let registrosFiltrados = todosRegistrosMaster.filter(r => {
+      if (!r.dataNotaISO) return true; 
+      
+      let dataRegistroValidar = r.dataNotaISO;
+
+      if (String(r.dataNotaISO).includes('GMT') || String(r.dataNotaISO).includes('Z') || String(r.dataNotaISO).match(/[a-zA-Z]/)) {
+        let d = new Date(r.dataNotaISO);
+        if (!isNaN(d.getTime())) {
+          let localDate = new Date(d.getTime() - (d.getTimezoneOffset() * 60000));
+          dataRegistroValidar = localDate.toISOString().split('T')[0]; 
+        }
+      }
+
+      if (dataInicio && dataRegistroValidar < dataInicio) return false;
+      if (dataFim && dataRegistroValidar > dataFim) return false;
+      
+      return true;
+    });
+    
+    renderizarTabelaCargas(registrosFiltrados);
+  }, 400); // 400ms de respiro
 }
-function limparFiltros() { document.getElementById('filtroDataInicio').value = ''; document.getElementById('filtroDataFim').value = ''; aplicarFiltros(); }
 
 function renderizarTabelaCargas(registros) {
   let tbody = document.getElementById('tabelaCargas').getElementsByTagName('tbody')[0];
-  tbody.innerHTML = ''; custoAtualFiltradoGlobal = 0;
+  tbody.innerHTML = ''; 
+  custoAtualFiltradoGlobal = 0;
 
   if (registros.length === 0) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#888;">Nenhuma fatura no período.</td></tr>';
-    atualizarDashboardValores(0, 0); return;
+    atualizarDashboardValores(0, 0); 
+    return;
   }
 
+  // 1. Calcula a matemática de TODOS os registros super rápido na memória
   registros.forEach(r => {
     custoAtualFiltradoGlobal += r.totalFatura;
+  });
+
+  // 2. Separa apenas os 100 primeiros para desenhar na tela (Impede a travada)
+  let limiteVisual = 100;
+  let registrosParaExibir = registros.slice(0, limiteVisual);
+
+  registrosParaExibir.forEach(r => {
     let tr = tbody.insertRow();
     tr.insertCell(0).innerText = r.fechamento; 
     tr.insertCell(1).innerText = r.carga; 
     
-    // CORREÇÃO DA DATA: Lê o formato gigante (Sun Aug 16...) e converte para DD/MM/AAAA
     let dataFormatada = '-';
     if (r.dataNotaISO) {
-      if (String(r.dataNotaISO).includes('GMT') || String(r.dataNotaISO).includes('Z') || String(r.dataNotaISO).includes('Horário') || String(r.dataNotaISO).match(/[a-zA-Z]/)) {
+      if (String(r.dataNotaISO).includes('GMT') || String(r.dataNotaISO).includes('Z') || String(r.dataNotaISO).match(/[a-zA-Z]/)) {
         let d = new Date(r.dataNotaISO);
         if (!isNaN(d.getTime())) {
           dataFormatada = d.toLocaleDateString('pt-BR');
@@ -767,7 +797,6 @@ function renderizarTabelaCargas(registros) {
     }
     
     tr.insertCell(2).innerText = dataFormatada;
-    
     tr.insertCell(3).innerHTML = `<span class="badge-filial">Filial ${r.filialOrigem}</span>`;
     
     let cellFatura = tr.insertCell(4); 
@@ -778,9 +807,24 @@ function renderizarTabelaCargas(registros) {
       cellFatura.style.fontWeight = 'bold'; 
     }
   });
+
+  // 3. Adiciona um aviso no final da tabela caso haja mais de 100 registros
+  if (registros.length > limiteVisual) {
+    let trAviso = tbody.insertRow();
+    trAviso.innerHTML = `<td colspan="5" style="text-align:center; color:#666; font-style:italic; padding: 15px; background: #fdfdfd;">
+      Exibindo os ${limiteVisual} primeiros lançamentos de um total de <b>${registros.length}</b>. 
+      (O valor total filtrado lá em cima inclui todos eles)
+    </td>`;
+  }
   
+  // Atualiza o painel superior passando o custo de TODOS e a quantidade de TODOS
   atualizarDashboardValores(custoAtualFiltradoGlobal, registros.length);
 }
+
+
+function limparFiltros() { document.getElementById('filtroDataInicio').value = ''; document.getElementById('filtroDataFim').value = ''; aplicarFiltros(); }
+
+
 
 function atualizarDashboardValores(custoFiltrado, qtdRegistros) {
   let saldo = totalDepositado - custoFiltrado;
