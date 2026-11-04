@@ -62,7 +62,6 @@ function showCustomModal(options) {
   });
 }
 
-// Atalhos rápidos para chamar o modal
 function cAlert(title, message) { return showCustomModal({ type: 'alert', title, message, okBtnClass: 'modal-btn-ok btn-sucesso' }); }
 function cAlertError(title, message) { return showCustomModal({ type: 'alert', title, message, okBtnClass: 'modal-btn-ok' }); }
 function cConfirm(title, message) { return showCustomModal({ type: 'confirm', title, message, okBtnClass: 'modal-btn-ok', okText: 'Sim, Confirmar' }); }
@@ -102,19 +101,16 @@ function salvarDadosLocalmente() {
     escalasDiariasSalvas, proximoIdEscalaDiaria
   };
 
-  // 1. Salva instantaneamente no cache do navegador (UX Zero Delay)
   localStorage.setItem('transmarina_bd_cache', JSON.stringify(dadosSincronizados));
 
-  // 2. Envia silenciosamente para o Google Sheets em segundo plano
   fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ chave: "DADOS_SISTEMA_TRANSMARINA", valor: JSON.stringify(dadosSincronizados) })
-  }).catch(e => console.error("Aviso: Sincronização em nuvem falhou, mas dados estão salvos localmente.", e));
+  }).catch(e => console.error("Aviso: Sincronização em nuvem falhou.", e));
 }
 
 async function carregarDadosLocais() {
-  // 1. Tenta carregar os dados instantâneos locais primeiro para a tela não ficar vazia
   let cache = localStorage.getItem('transmarina_bd_cache');
   if (cache) {
     let bd = JSON.parse(cache);
@@ -132,27 +128,24 @@ async function carregarDadosLocais() {
     atualizarTelas();
   }
 
-  // 2. Busca na Nuvem para ver se outro computador atualizou algo
   try {
-    let response = await fetch(API_URL);
+    let response = await fetch(API_URL + "?t=" + new Date().getTime());
     let dadosAPI = await response.json();
 
     if (dadosAPI["DADOS_SISTEMA_TRANSMARINA"]) {
       let bd = JSON.parse(dadosAPI["DADOS_SISTEMA_TRANSMARINA"]);
       if (bd.depositos) depositos = bd.depositos;
       if (bd.balancosSemanais) balancosSemanais = bd.balancosSemanais;
-      // Puxamos todas as outras chaves...
       if (bd.planilhasLancadas) planilhasLancadas = bd.planilhasLancadas;
       if (bd.todosRegistrosMaster) todosRegistrosMaster = bd.todosRegistrosMaster;
       if (bd.tarifasPorCodigo) tarifasPorCodigo = bd.tarifasPorCodigo;
       if (bd.escalasDiariasSalvas) escalasDiariasSalvas = bd.escalasDiariasSalvas;
       
-      // Salva o cache atualizado que veio da internet
       localStorage.setItem('transmarina_bd_cache', JSON.stringify(bd));
       atualizarTelas();
     }
   } catch (e) {
-    console.error("Modo Offline Ativo. Usando apenas os dados da memória local.");
+    console.error("Modo Offline Ativo.");
   }
 }
 
@@ -162,6 +155,7 @@ function atualizarTelas() {
   renderizarTabelaTarifasCodigo();
   atualizarResumoPlanilhas();
   renderizarTabelaFechamentosSalvos();
+  renderizarTabelaEscalasSalvas();
   aplicarFiltros();
 }
 
@@ -207,7 +201,7 @@ function trocarAba(idAba, elemento) {
 }
 
 // ==========================================
-// DEPÓSITOS PRÉ-PAGOS
+// DEPÓSITOS PRÉ-PAGOS (AMBAS AS TELAS)
 // ==========================================
 async function adicionarDeposito(event) {
   if (event) event.preventDefault(); 
@@ -223,6 +217,33 @@ async function adicionarDeposito(event) {
     renderizarTabelaDepositos();
     aplicarFiltros();
     salvarDadosLocalmente();
+  } else {
+    cAlertError('Atenção', 'Digite um valor de depósito válido.');
+  }
+}
+
+// NOVO: Atalho para lançar depósito direto na aba de Balanços & Escalas com Data e Valor
+async function adicionarDepositoPelaEscala() {
+  let dataInput = document.getElementById('dataDepositoEscala').value;
+  let valorInput = document.getElementById('valorDepositoEscala').value;
+  let valor = parseFloat(valorInput);
+
+  if (!isNaN(valor) && valor > 0) {
+    depositos.push({ 
+      id: proximoIdDeposito++, 
+      data: dataInput ? formatarDataBR(dataInput) : new Date().toLocaleDateString('pt-BR'), 
+      valor: valor 
+    });
+    
+    document.getElementById('valorDepositoEscala').value = '';
+    document.getElementById('dataDepositoEscala').value = '';
+    
+    recalcularTotalDepositos();
+    renderizarTabelaDepositos();
+    aplicarFiltros();
+    salvarDadosLocalmente();
+    
+    cAlert('Depósito Adicionado', 'O valor e data foram lançados com sucesso e o Teto atualizado!');
   } else {
     cAlertError('Atenção', 'Digite um valor de depósito válido.');
   }
@@ -249,7 +270,7 @@ function renderizarTabelaDepositos() {
   tbody.innerHTML = depositos.length === 0 ? '<tr id="linhaVaziaDepositos"><td colspan="3" style="text-align:center; color:#888;">Nenhum depósito cadastrado.</td></tr>' : '';
   depositos.forEach(d => {
     let row = tbody.insertRow();
-    row.insertCell(0).innerText = d.data;
+    row.insertCell(0).innerText = extrairDataAbreviada(d.data);
     row.insertCell(1).innerText = formatarMoeda(d.valor);
     row.insertCell(2).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirDeposito(${d.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
   });
@@ -288,7 +309,6 @@ async function editarTarifaCodigo(cod) {
   let item = tarifasPorCodigo[cod];
   if (!item) return;
 
-  // Usa nosso novo Modal que pede os dois valores de uma vez só
   let respostas = await showCustomModal({
     type: 'promptTarifa',
     title: `[Cód. ${cod}] - ${item.nome}`,
@@ -301,7 +321,7 @@ async function editarTarifaCodigo(cod) {
     okBtnClass: 'modal-btn-ok btn-sucesso'
   });
 
-  if (!respostas) return; // Se clicou em cancelar
+  if (!respostas) return;
 
   let num1 = parseFloat(respostas.v1.replace(',', '.'));
   let num2 = parseFloat(respostas.v2.replace(',', '.'));
@@ -314,7 +334,7 @@ async function editarTarifaCodigo(cod) {
     if (escalaAtualMatrix) recalcularEscalaComTarifas();
     cAlert('Sucesso', 'Valores de tarifa alterados com sucesso!');
   } else {
-    cAlertError('Erro', 'Você digitou um valor inválido. Tente novamente usando apenas números.');
+    cAlertError('Erro', 'Você digitou um valor inválido.');
   }
 }
 
@@ -351,7 +371,6 @@ function renderizarTabelaTarifasCodigo() {
   });
 }
 
-// Função para a Lupinha de Pesquisa
 function filtrarTarifas() {
   let termo = document.getElementById('inputPesquisaTarifa').value.toLowerCase();
   let trs = document.getElementById('tabelaTarifasCodigo').getElementsByTagName('tbody')[0].getElementsByTagName('tr');
@@ -376,7 +395,6 @@ async function processarEscalasDefinitivas() {
   }
 
   let arquivosLidos = 0;
-  // Agora a matriz guardará objetos contendo a linha (row) E a data daquela respectiva planilha
   let matrizConsolidada = []; 
 
   Array.from(files).forEach((file) => {
@@ -390,8 +408,6 @@ async function processarEscalasDefinitivas() {
         let matrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: "" });
 
         if (matrix && matrix.length > 0) {
-          
-          // 1. Tenta achar a data ESPECÍFICA DESTA PLANILHA lendo as primeiras 15 linhas
           let dataDestaPlanilha = "-";
           for (let r = 0; r < Math.min(15, matrix.length); r++) {
             for (let c = 0; c < matrix[r].length; c++) {
@@ -404,11 +420,9 @@ async function processarEscalasDefinitivas() {
             if (dataDestaPlanilha !== "-") break;
           }
 
-          // 2. Acha onde está o cabeçalho desta planilha
           let idxHeader = matrix.findIndex(r => r.join(' ').toUpperCase().includes('F. CARGA'));
           
           if (idxHeader !== -1) {
-            // Em vez de mesclar linhas cruas, passamos as linhas e também qual foi a data encontrada e o cabeçalho
             let cabecalho = matrix[idxHeader];
             let linhasDeDados = matrix.slice(idxHeader + 1);
             
@@ -421,7 +435,6 @@ async function processarEscalasDefinitivas() {
             });
           }
         }
-        
       } catch (err) {
         cAlertError('Erro de Leitura', `Ocorreu um erro ao ler o arquivo ${file.name}:\n${err.message}`);
       } finally {
@@ -440,7 +453,6 @@ async function recalcularEscalaComTarifas(exibirAlerta = false) {
   if (!escalaAtualMatrix || escalaAtualMatrix.length === 0) return;
   
   let itensEscala = [], custoTotalEscala = 0, totalEntregasEscala = 0;
-  // Usamos um Set para listar quantas datas diferentes processamos (para montar o título do painel)
   let datasEncontradas = new Set(); 
 
   for (let i = 0; i < escalaAtualMatrix.length; i++) {
@@ -450,7 +462,6 @@ async function recalcularEscalaComTarifas(exibirAlerta = false) {
     
     if (!row || row.length === 0) continue;
 
-    // Buscar os índices das colunas de forma dinâmica, pois o layout pode variar
     let getIndex = (termosBusca) => {
         return cabecalho.findIndex(c => termosBusca.some(t => String(c).toUpperCase().includes(t)));
     };
@@ -462,29 +473,24 @@ async function recalcularEscalaComTarifas(exibirAlerta = false) {
     let idxParadas = getIndex(['ENTREGAS', 'PARADAS', 'QTD']);
     let idxMotorista = getIndex(['MOTORISTA', 'NOME']);
 
-    // Se a coluna não for encontrada dinamicamente, ele chuta a posição padrão anterior
     let box = (idxBox !== -1 && row[idxBox] !== undefined) ? String(row[idxBox]).trim() : (row[0] !== undefined ? String(row[0]).trim() : '-');
     let fCarga = (idxFCarga !== -1 && row[idxFCarga] !== undefined) ? String(row[idxFCarga]).trim() : (row[1] !== undefined ? String(row[1]).trim() : '-');
     let codRegiao = (idxRegiaoCod !== -1 && row[idxRegiaoCod] !== undefined) ? String(row[idxRegiaoCod]).trim() : (row[2] !== undefined ? String(row[2]).trim() : '-');
     let regiaoEntrega = (idxRegiaoDesc !== -1 && row[idxRegiaoDesc] !== undefined) ? String(row[idxRegiaoDesc]).trim() : (row[3] !== undefined ? String(row[3]).trim() : '-');
     
-    // Problema 2 Resolvido: Limpa tudo que não for número antes de converter, pra ter a exatidão das paradas
     let valorParadaStr = (idxParadas !== -1 && row[idxParadas] !== undefined) ? String(row[idxParadas]) : (row[4] !== undefined ? String(row[4]) : '0');
     let paradas = parseInt(valorParadaStr.replace(/[^0-9]/g, '')) || 0;
     
     let motorista = (idxMotorista !== -1 && row[idxMotorista] !== undefined) ? String(row[idxMotorista]).trim() : (row[9] !== undefined ? String(row[9]).trim() : '-');
 
-    // Filtro de exclusão de dados sujos/não relacionados à carga
     if (!fCarga || fCarga === '0' || fCarga === '-' || codRegiao === '0' || codRegiao === '-' || paradas <= 0 || regiaoEntrega.toUpperCase().includes('DISPONIVEL')) continue;
 
-    // Se tem paradas e F.carga validos, consideramos essa data!
     if(itemData.dataPlanilha !== "-") datasEncontradas.add(itemData.dataPlanilha);
 
-    // (Dentro do loop for, substitua a validação da tarifa por esta:)
     let tarifaInfo = tarifasPorCodigo[codRegiao];
     
     let tarifaUnitaria = 0;
-    let faixaAplicada = "SEM CADASTRO"; // Por padrão, se não achar, avisa que não tem
+    let faixaAplicada = "SEM CADASTRO";
     
     if (tarifaInfo) {
         if (paradas <= 24) {
@@ -509,7 +515,6 @@ async function recalcularEscalaComTarifas(exibirAlerta = false) {
     });
   }
 
-  // Título da Data (mostra as datas separadas por vírgula se forem várias, ex: "15/10, 16/10")
   let tituloDatas = datasEncontradas.size > 0 ? Array.from(datasEncontradas).join(', ') : new Date().toLocaleDateString('pt-BR');
 
   escalaAtualCalculada = {
@@ -521,7 +526,6 @@ async function recalcularEscalaComTarifas(exibirAlerta = false) {
     itens: itensEscala
   };
 
-  // Atualiza painel do frontend
   document.getElementById('txtDataEscala').innerText = escalaAtualCalculada.dataEscala;
   document.getElementById('txtQtdCargasEscala').innerText = `${escalaAtualCalculada.qtdCargas} carga(s)`;
   document.getElementById('txtTotalEntregasEscala').innerText = escalaAtualCalculada.totalEntregas;
@@ -538,14 +542,16 @@ async function recalcularEscalaComTarifas(exibirAlerta = false) {
     tr.insertCell(2).innerHTML = `<span class="badge-codigo">Cód. ${item.codRegiao}</span>`;
     tr.insertCell(3).innerText = item.regiao;
     tr.insertCell(4).innerText = item.paradas;
-// Substitua a linha do tr.insertCell(5) por esta:
+    
     if (item.faixaAplicada === "Até 24") {
         tr.insertCell(5).innerHTML = `<span class="badge-faixa1">Até 24</span>`;
     } else if (item.faixaAplicada === "Acima de 25") {
         tr.insertCell(5).innerHTML = `<span class="badge-faixa2">Acima 25</span>`;
     } else {
         tr.insertCell(5).innerHTML = `<span style="background:#f8d7da; color:#721c24; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:bold;">⚠️ NÃO CADASTRADO</span>`;
-    }    tr.insertCell(6).innerText = item.motorista;
+    }
+    
+    tr.insertCell(6).innerText = item.motorista;
     tr.insertCell(7).innerText = formatarMoeda(item.tarifaUnitaria);
     tr.insertCell(8).innerText = formatarMoeda(item.custoCarga);
     tr.insertCell(9).innerText = formatarMoeda(item.ticketMedio);
@@ -553,19 +559,19 @@ async function recalcularEscalaComTarifas(exibirAlerta = false) {
 
   if (exibirAlerta) {
     if(datasEncontradas.size > 1) {
-       cAlert('Várias Escalas Importadas', `Foram processadas ${itensEscala.length} cargas resultando em ${totalEntregasEscala} entregas.\nDatas importadas: ${tituloDatas}`);
+       cAlert('Várias Escalas Importadas', `Foram processadas ${itensEscala.length} cargas.\nDatas: ${tituloDatas}`);
     } else {
-       cAlert('Sucesso!', `Foram processadas ${itensEscala.length} cargas resultando em ${totalEntregasEscala} entregas totais.`);
+       cAlert('Sucesso!', `Foram processadas ${itensEscala.length} cargas.`);
     }
   }
 }
 
 async function limparEscalaAtual() {
   if (!escalaAtualCalculada && !escalaAtualMatrix) {
-    cAlertError('Aviso', 'Nenhuma escala carregada na tela para exclusão.');
+    cAlertError('Aviso', 'Nenhuma escala carregada na tela.');
     return;
   }
-  let confirma = await cConfirm('Limpar', 'Deseja remover os lançamentos da escala atual exibida na tela?');
+  let confirma = await cConfirm('Limpar', 'Deseja remover os lançamentos da escala atual?');
   if (confirma) {
     escalaAtualMatrix = null; escalaAtualCalculada = null;
     document.getElementById('inputEscalaExcel').value = '';
@@ -574,13 +580,13 @@ async function limparEscalaAtual() {
     document.getElementById('txtTotalEntregasEscala').innerText = '0';
     document.getElementById('txtCustoTotalEscala').innerText = formatarMoeda(0);
     document.getElementById('txtTicketMedioGeralEscala').innerText = formatarMoeda(0);
-    document.getElementById('tabelaEscalaDetalhada').getElementsByTagName('tbody')[0].innerHTML = '<tr><td colspan="10" style="text-align:center; color:#888;">Aguardando o anexo da escala...</td></tr>';
+    document.getElementById('tabelaEscalaDetalhada').getElementsByTagName('tbody')[0].innerHTML = '<tr><td colspan="10" style="text-align:center; color:#888;">Aguardando o anexo...</td></tr>';
   }
 }
 
 async function salvarEscalaDiariaNoHistorico() {
   if (!escalaAtualCalculada) {
-    cAlertError('Faltam Dados', 'Processe uma escala do dia antes de salvar.');
+    cAlertError('Faltam Dados', 'Processe uma escala antes de salvar.');
     return;
   }
   let novaEscalaSalva = {
@@ -597,19 +603,17 @@ async function salvarEscalaDiariaNoHistorico() {
   escalasDiariasSalvas.push(novaEscalaSalva);
   renderizarTabelaEscalasSalvas();
   salvarDadosLocalmente();
-  cAlert('Registro Salvo', `A escala do dia ${novaEscalaSalva.dataEscala} foi integrada ao Balanço Semanal!`);
+  cAlert('Registro Salvo', `Escala do dia ${novaEscalaSalva.dataEscala} integrada com sucesso!`);
 }
 
 async function excluirEscalaSalva(idEscala) {
-  let confirma = await cConfirm('Apagar Escala', 'Certeza que deseja excluir este dia do balanço semanal?');
+  let confirma = await cConfirm('Apagar Escala', 'Certeza que deseja excluir este dia?');
   if (confirma) {
     escalasDiariasSalvas = escalasDiariasSalvas.filter(e => e.id !== idEscala);
     renderizarTabelaEscalasSalvas();
     salvarDadosLocalmente();
   }
 }
-
-
 
 // ==========================================
 // FATURAS QUINZENAIS (BALANÇO)
@@ -627,7 +631,7 @@ async function processarArquivoExcel() {
   let files = fileInput.files;
 
   if (!files || files.length === 0) {
-    cAlertError('Falta Arquivo', 'Selecione ao menos uma planilha de Faturamento (.xlsx).');
+    cAlertError('Falta Arquivo', 'Selecione ao menos uma planilha (.xlsx).');
     return;
   }
 
@@ -681,7 +685,7 @@ async function processarArquivoExcel() {
         if (arquivosLidos === files.length) {
           fileInput.value = '';
           atualizarResumoPlanilhas(); aplicarFiltros(); salvarDadosLocalmente();
-          cAlert('Importação Completa', `${files.length} planilha(s) extraída(s) com sucesso para o banco.`);
+          cAlert('Importação Completa', `${files.length} planilha(s) extraída(s).`);
         }
       }
     };
@@ -690,8 +694,8 @@ async function processarArquivoExcel() {
 }
 
 async function limparPlanilhasAnexadas() {
-  if (planilhasLancadas.length === 0) { cAlertError('Aviso', 'Nenhuma planilha no sistema para limpar.'); return; }
-  let confirma = await cConfirm('Apagar Dados', 'Isso removerá as faturas carregadas do banco. Continuar?');
+  if (planilhasLancadas.length === 0) { cAlertError('Aviso', 'Nenhuma planilha.'); return; }
+  let confirma = await cConfirm('Apagar', 'Remover faturas carregadas?');
   if (confirma) {
     planilhasLancadas = []; todosRegistrosMaster = [];
     document.getElementById('inputArquivoExcel').value = '';
@@ -700,7 +704,7 @@ async function limparPlanilhasAnexadas() {
 }
 
 async function excluirPlanilha(idPlanilha) {
-  let confirma = await cConfirm('Apagar Planilha', 'Remover esta planilha e as faturas dela associadas?');
+  let confirma = await cConfirm('Apagar', 'Remover esta planilha?');
   if (confirma) {
     planilhasLancadas = planilhasLancadas.filter(p => p.id !== idPlanilha);
     todosRegistrosMaster = todosRegistrosMaster.filter(r => r.planilhaId !== idPlanilha);
@@ -713,7 +717,7 @@ function atualizarResumoPlanilhas() {
   let tbody = document.getElementById('tabelaPlanilhasLancadas').getElementsByTagName('tbody')[0];
   tbody.innerHTML = '';
 
-  if (planilhasLancadas.length === 0) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#888;">Nenhuma planilha foi lançada.</td></tr>'; return; }
+  if (planilhasLancadas.length === 0) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#888;">Nenhuma planilha.</td></tr>'; return; }
   planilhasLancadas.forEach(p => {
     let tr = tbody.insertRow();
     tr.insertCell(0).innerText = p.id; tr.insertCell(1).innerText = p.nomeArquivo; tr.insertCell(2).innerText = p.dataUpload;
@@ -722,21 +726,15 @@ function atualizarResumoPlanilhas() {
   });
 }
 
-// Variável de controle para o atraso (Debounce)
 let timeoutFiltro = null;
-
 function aplicarFiltros() {
-  // Limpa o temporizador se o usuário ainda estiver digitando
   clearTimeout(timeoutFiltro);
-  
-  // Aguarda 400 milissegundos após o último clique/tecla para processar
   timeoutFiltro = setTimeout(() => {
     let dataInicio = document.getElementById('filtroDataInicio').value;
     let dataFim = document.getElementById('filtroDataFim').value;
 
     let registrosFiltrados = todosRegistrosMaster.filter(r => {
       if (!r.dataNotaISO) return true; 
-      
       let dataRegistroValidar = r.dataNotaISO;
 
       if (String(r.dataNotaISO).includes('GMT') || String(r.dataNotaISO).includes('Z') || String(r.dataNotaISO).match(/[a-zA-Z]/)) {
@@ -749,12 +747,11 @@ function aplicarFiltros() {
 
       if (dataInicio && dataRegistroValidar < dataInicio) return false;
       if (dataFim && dataRegistroValidar > dataFim) return false;
-      
       return true;
     });
     
     renderizarTabelaCargas(registrosFiltrados);
-  }, 400); // 400ms de respiro
+  }, 400);
 }
 
 function renderizarTabelaCargas(registros) {
@@ -768,12 +765,10 @@ function renderizarTabelaCargas(registros) {
     return;
   }
 
-  // 1. Calcula a matemática de TODOS os registros super rápido na memória
   registros.forEach(r => {
     custoAtualFiltradoGlobal += r.totalFatura;
   });
 
-  // 2. Separa apenas os 100 primeiros para desenhar na tela (Impede a travada)
   let limiteVisual = 100;
   let registrosParaExibir = registros.slice(0, limiteVisual);
 
@@ -808,23 +803,17 @@ function renderizarTabelaCargas(registros) {
     }
   });
 
-  // 3. Adiciona um aviso no final da tabela caso haja mais de 100 registros
   if (registros.length > limiteVisual) {
     let trAviso = tbody.insertRow();
     trAviso.innerHTML = `<td colspan="5" style="text-align:center; color:#666; font-style:italic; padding: 15px; background: #fdfdfd;">
-      Exibindo os ${limiteVisual} primeiros lançamentos de um total de <b>${registros.length}</b>. 
-      (O valor total filtrado lá em cima inclui todos eles)
+      Exibindo ${limiteVisual} de <b>${registros.length}</b> registros.
     </td>`;
   }
   
-  // Atualiza o painel superior passando o custo de TODOS e a quantidade de TODOS
   atualizarDashboardValores(custoAtualFiltradoGlobal, registros.length);
 }
 
-
 function limparFiltros() { document.getElementById('filtroDataInicio').value = ''; document.getElementById('filtroDataFim').value = ''; aplicarFiltros(); }
-
-
 
 function atualizarDashboardValores(custoFiltrado, qtdRegistros) {
   let saldo = totalDepositado - custoFiltrado;
@@ -843,15 +832,12 @@ async function salvarFechamentoSemanal() {
   let dataInicio = document.getElementById('filtroDataInicio').value;
   let dataFim = document.getElementById('filtroDataFim').value;
 
-  // Resgata as datas dos depósitos ativos antes de zerar
-  let datasDepositos = depositos.map(d => d.data).join(', ');
+  let datasDepositos = depositos.map(d => extrairDataAbreviada(d.data)).join(', ');
   let infoDeposito = datasDepositos ? datasDepositos : 'S/ Depósito';
 
   let periodoTexto = (dataInicio && dataFim) ? `${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}` : (dataInicio ? `A partir de ${formatarDataBR(dataInicio)}` : (dataFim ? `Até ${formatarDataBR(dataFim)}` : "Todas as datas"));
   
-  // Combina as duas informações com quebra de linha (formato HTML embutido)
   let periodoCombinado = `<b>Depósito:</b> ${infoDeposito}<br><b>Faturas:</b> ${periodoTexto}`;
-  
   let saldoCalculado = totalDepositado - custoAtualFiltradoGlobal;
 
   let novoBalanco = {
@@ -865,31 +851,31 @@ async function salvarFechamentoSemanal() {
 
   balancosSemanais.push(novoBalanco); 
   
-  depositos = []; 
+  depositos = []; // Zera os depósitos oficiais após fechar o balanço semanal
   recalcularTotalDepositos(); 
   renderizarTabelaDepositos();
   
   document.getElementById('valorDeposito').value = ''; 
   document.getElementById('dataDeposito').value = '';
+  document.getElementById('valorDepositoEscala').value = ''; 
+  document.getElementById('dataDepositoEscala').value = '';
   
   aplicarFiltros(); 
-  salvarDadosLocalmente(); // Vai salvar instantâneo
+  salvarDadosLocalmente(); 
   
-  cAlert('Balanço Gerado!', `Fechamento encerrado. Resultado: ${saldoCalculado >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'} de ${formatarMoeda(saldoCalculado)}.\n\nCréditos pré-pagos foram zerados para o próximo ciclo.`);
+  cAlert('Balanço Gerado!', `Fechamento encerrado. Resultado: ${saldoCalculado >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'} de ${formatarMoeda(saldoCalculado)}.`);
 }
 
-// Função para limpar datas que vêm sujas do Google Sheets
 function formatarDataSimples(dataStr) {
   if (!dataStr) return '-';
-  if (String(dataStr).includes('GMT') || String(dataStr).includes('Z') || String(dataStr).includes('Horário')) {
+  if (String(dataStr).includes('GMT') || String(dataStr).includes('Z') || String(dataStr).includes('Horário') || String(dataStr).match(/[a-zA-Z]/)) {
     let d = new Date(dataStr);
     if (!isNaN(d.getTime())) {
-      return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+      return d.toLocaleDateString('pt-BR');
     }
   }
-  return dataStr;
+  return extrairDataAbreviada(dataStr);
 }
-
 
 function renderizarTabelaFechamentosSalvos() {
   let elQtd = document.getElementById('qtdBalançosTab'); 
@@ -901,7 +887,7 @@ function renderizarTabelaFechamentosSalvos() {
   let somatoriaGeral = 0;
 
   if (balancosSemanais.length === 0) {
-    tbody.innerHTML = '<tr id="linhaVaziaBalanços"><td colspan="6" style="text-align:center; color:#888;">Nenhum balanço gerado.</td></tr>';
+    tbody.innerHTML = '<tr id="linhaVaziaBalanços"><td colspan="6" style="text-align:center; color:#888;">Nenhum balanço.</td></tr>';
     let elSomatoria = document.getElementById('txtSomatoriaGeralBalanços'); if (elSomatoria) elSomatoria.innerText = formatarMoeda(0);
     return;
   }
@@ -910,12 +896,18 @@ function renderizarTabelaFechamentosSalvos() {
     somatoriaGeral += b.saldo;
     let tr = tbody.insertRow();
     
-    // Aplicando fundo com profundidade na data e no período
     let cellData = tr.insertCell(0);
-    cellData.innerHTML = `<span class="box-info" style="white-space: nowrap; font-weight: 600;">${formatarDataSimples(b.dataRegistro)}</span>`; 
+    cellData.innerHTML = `<span class="box-info" style="white-space: nowrap; font-weight: 600;">${extrairDataAbreviada(b.dataRegistro)}</span>`; 
     
+    let periodoLimpo = b.periodo || '-';
+    let regexDataSuja = /([a-zA-Z]{3} [a-zA-Z]{3} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT[^<]+)/g;
+    
+    periodoLimpo = periodoLimpo.replace(regexDataSuja, (textoEncontrado) => {
+        return extrairDataAbreviada(textoEncontrado);
+    });
+
     let cellPeriodo = tr.insertCell(1);
-    cellPeriodo.innerHTML = `<div class="box-info">${b.periodo || '-'}</div>`;
+    cellPeriodo.innerHTML = `<div class="box-info" style="white-space: nowrap;">${periodoLimpo}</div>`;
 
     tr.insertCell(2).innerHTML = `<span class="box-numero">${formatarMoeda(b.totalCredito)}</span>`; 
     tr.insertCell(3).innerHTML = `<span class="box-numero">${formatarMoeda(b.totalFaturas)}</span>`;
@@ -935,6 +927,59 @@ function renderizarTabelaFechamentosSalvos() {
   }
 }
 
+// Limpeza blindada para DD/MM/AAAA em qualquer lugar do sistema
+function extrairDataAbreviada(dataRaw) {
+  if (!dataRaw) return '-';
+  let str = String(dataRaw).trim();
+  
+  if (str.match(/[a-zA-Z]/)) {
+    let d = new Date(str);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR'); 
+  }
+  
+  if (str.includes('-') && str.split('-')[0].length === 4) {
+    let p = str.split('T')[0].split('-');
+    return `${p[2]}/${p[1]}/${p[0]}`;
+  }
+  
+  if (str.includes('.')) {
+    return str.replace(/\./g, '/').split(' ')[0];
+  }
+  
+  if (str.includes('/')) {
+    return str.split(' ')[0];
+  }
+  
+  return str;
+}
+
+function obterPeriodoDaSemana(dataLimpa) {
+  if (!dataLimpa || dataLimpa === '-') return '-';
+  
+  let partes = dataLimpa.split('/');
+  if (partes.length < 3) return dataLimpa;
+
+  let d = new Date(parseInt(partes[2]), parseInt(partes[1]) - 1, parseInt(partes[0]));
+  if (isNaN(d.getTime())) return dataLimpa;
+
+  let diaSemana = d.getDay(); 
+  let difSegunda = d.getDate() - diaSemana + (diaSemana === 0 ? -6 : 1);
+  let segunda = new Date(d.setDate(difSegunda));
+  
+  let domingo = new Date(segunda);
+  domingo.setDate(segunda.getDate() + 6);
+
+  let diaSeg = String(segunda.getDate()).padStart(2, '0');
+  let mesSeg = String(segunda.getMonth() + 1).padStart(2, '0');
+  let anoSeg = segunda.getFullYear();
+
+  let diaDom = String(domingo.getDate()).padStart(2, '0');
+  let mesDom = String(domingo.getMonth() + 1).padStart(2, '0');
+  let anoDom = domingo.getFullYear();
+
+  return `${diaSeg}/${mesSeg}/${anoSeg} a ${diaDom}/${mesDom}/${anoDom}`;
+}
+
 function renderizarTabelaEscalasSalvas() {
   let elQtd = document.getElementById('qtdEscalasTab');
   if (elQtd) elQtd.innerText = escalasDiariasSalvas.length;
@@ -951,19 +996,23 @@ function renderizarTabelaEscalasSalvas() {
 
     let tr = tbody.insertRow();
     
-    // Aplicando fundo com profundidade na data da escala
-    tr.insertCell(0).innerHTML = `<span class="box-info" style="white-space: nowrap; font-weight: 600;">${formatarDataSimples(e.dataEscala)}</span>`;
-    tr.insertCell(1).innerHTML = `<span style="font-weight: 600; color: #333; font-size: 14px;">${e.totalEntregas}</span>`;
+    let dataFormatada = formatarDataSimples(e.dataEscala);
+    tr.insertCell(0).innerHTML = `<span class="box-info" style="white-space: nowrap; font-weight: 600;">${dataFormatada}</span>`;
     
-    tr.insertCell(2).innerHTML = `<span class="box-numero">${formatarMoeda(e.custoTotal)}</span>`;
-    tr.insertCell(3).innerHTML = `<span class="box-numero">${formatarMoeda(e.ticketMedio)}</span>`;
+    let periodoCalculado = obterPeriodoDaSemana(dataFormatada);
+    tr.insertCell(1).innerHTML = `<span style="font-size: 11px; color: #555; white-space: nowrap;">${periodoCalculado}</span>`;
     
-    tr.insertCell(4).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirEscalaSalva(${e.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
+    tr.insertCell(2).innerHTML = `<span style="font-weight: 600; color: #333; font-size: 14px;">${e.totalEntregas}</span>`;
+    tr.insertCell(3).innerHTML = `<span class="box-numero">${formatarMoeda(e.custoTotal)}</span>`;
+    tr.insertCell(4).innerHTML = `<span class="box-numero">${formatarMoeda(e.ticketMedio)}</span>`;
+    tr.insertCell(5).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirEscalaSalva(${e.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
   });
 
-  if (escalasDiariasSalvas.length === 0) tbody.innerHTML = '<tr id="linhaVaziaEscalasSalvas"><td colspan="5" style="text-align:center; color:#888;">Nenhuma escala salva.</td></tr>';
+  if (escalasDiariasSalvas.length === 0) tbody.innerHTML = '<tr id="linhaVaziaEscalasSalvas"><td colspan="6" style="text-align:center; color:#888;">Nenhuma escala.</td></tr>';
 
   let ticketMedioSemanal = somaEntregasSemana > 0 ? (somaCustoSemana / somaEntregasSemana) : 0;
+  
+  // O Teto reflete diretamente o total depositado oficial (lançado por qualquer uma das duas telas)
   let saldoCreditoSemana = totalDepositado - somaCustoSemana;
 
   let elCred = document.getElementById('txtSemanaCreditoTotal'); if(elCred) elCred.innerText = formatarMoeda(totalDepositado);
@@ -978,9 +1027,6 @@ function renderizarTabelaEscalasSalvas() {
   }
 }
 
-// ==========================================
-// FUNÇÃO DE IMPRESSÃO (RELATÓRIO UNIFICADO)
-// ==========================================
 function imprimirRelatorio() {
   let somatoriaBalanços = balancosSemanais.reduce((acc, b) => acc + b.saldo, 0);
   let statusGeral = somatoriaBalanços >= 0 ? 'SUPERÁVIT' : 'DÉFICIT';
@@ -998,122 +1044,73 @@ function imprimirRelatorio() {
     <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
       <div style="width: 48%;">
         <h3 style="margin: 0 0 5px 0;">Histórico de Balanços Semanais</h3>
-        <p style="margin: 0 0 10px 0; font-size: 11px; color: #555;">Confronto de créditos pré-pagos vs faturas.</p>
-        <span style="font-size: 11px; font-weight: bold; text-transform: uppercase;">Total Geral (Déficit / Superávit)</span><br>
-        <span style="font-size: 20px; font-weight: bold; color: ${somatoriaBalanços >= 0 ? '#166534' : '#991b1b'};">${formatarMoeda(somatoriaBalanços)} (${statusGeral})</span><br>
-        <span style="font-size: 10px; color: #666;">Saldo Geral Acumulado</span>
+        <span style="font-size: 11px; font-weight: bold; text-transform: uppercase;">Total Geral</span><br>
+        <span style="font-size: 20px; font-weight: bold; color: ${somatoriaBalanços >= 0 ? '#166534' : '#991b1b'};">${formatarMoeda(somatoriaBalanços)} (${statusGeral})</span>
       </div>
 
       <div style="width: 48%;">
         <h3 style="margin: 0 0 5px 0;">Consolidado Semanal das Escalas</h3>
-        <p style="margin: 0 0 10px 0; font-size: 11px; color: #555;">Gasto diário das escalas abatido do Crédito Pré-Pago.</p>
         <div style="display: flex; gap: 20px;">
           <div>
-            <span style="font-size: 10px; font-weight: bold; text-transform: uppercase;">Crédito (Teto)</span><br>
+            <span style="font-size: 10px; font-weight: bold;">TETO (DEPÓSITOS)</span><br>
             <span style="font-size: 16px; font-weight: bold; color: #0288d1;">${formatarMoeda(totalDepositado)}</span>
           </div>
           <div>
-            <span style="font-size: 10px; font-weight: bold; text-transform: uppercase;">Valor Gasto</span><br>
+            <span style="font-size: 10px; font-weight: bold;">VALOR GASTO</span><br>
             <span style="font-size: 16px; font-weight: bold; color: #c0392b;">${formatarMoeda(somaCustoEscala)}</span>
           </div>
-          <div>
-            <span style="font-size: 10px; font-weight: bold; text-transform: uppercase;">Balanço Escalas</span><br>
-            <span style="font-size: 16px; font-weight: bold; color: ${balancoEscalas >= 0 ? '#166534' : '#991b1b'};">${formatarMoeda(balancoEscalas)}</span>
-          </div>
-        </div>
-        <div style="margin-top: 10px;">
-          <span style="font-size: 10px; font-weight: bold; text-transform: uppercase;">Ticket Médio</span><br>
-          <span style="font-size: 16px; font-weight: bold; color: #8e44ad;">${formatarMoeda(ticketMedio)}</span>
         </div>
       </div>
     </div>
-
-    <h3 style="margin: 0 0 10px 0;">Detalhamento de Registros Semanais</h3>
-    <table class="print-table">
-      <thead>
-        <tr>
-          <th>Data Registro</th>
-          <th>Depósito e Período</th>
-          <th>Crédito (R$)</th>
-          <th>Faturas (R$)</th>
-          <th>Saldo (R$)</th>
-          <th style="border-left: 2px solid #000;">Data Escala</th>
-          <th>Entregas</th>
-          <th>Custo Previsto</th>
-          <th>Ticket Médio</th>
-          <th>Ação</th>
-        </tr>
-      </thead>
-      <tbody>
+    <table class="print-table"><thead><tr><th>Data Registro</th><th>Período</th><th>Crédito</th><th>Faturas</th><th>Saldo</th></tr></thead><tbody>
   `;
 
-  let maxLinhas = Math.max(balancosSemanais.length, escalasDiariasSalvas.length);
-  
-  if (maxLinhas === 0) {
-    html += `<tr><td colspan="10" style="text-align: center;">Nenhum registro encontrado para impressão.</td></tr>`;
-  }
-
-  for (let i = 0; i < maxLinhas; i++) {
-    let b = balancosSemanais[i];
-    let e = escalasDiariasSalvas[i];
-
-    html += `<tr>`;
-    
-    // Lado esquerdo (Balanço com Período separado e Data forçada para DD/MM/ANO)
-    if (b) {
-      // Passa pela função de limpar a data americana primeiro, e depois corta a hora
-      let dataSemHora = b.dataRegistro ? formatarDataSimples(b.dataRegistro).split(' ')[0] : '-';
-      let periodoTxt = b.periodo ? b.periodo.replace(/<br>/g, ' - ').replace(/<b>/g, '').replace(/<\/b>/g, '') : '';
-      
-      html += `
-        <td style="white-space: nowrap;">${dataSemHora}</td>
-        <td><span style="font-size: 10px; color: #444;">${periodoTxt}</span></td>
-        <td>${formatarMoeda(b.totalCredito)}</td>
-        <td>${formatarMoeda(b.totalFaturas)}</td>
-        <td style="color: ${b.saldo >= 0 ? '#166534' : '#991b1b'}; font-weight: bold;">${formatarMoeda(b.saldo)}</td>
-      `;
-    } else {
-      html += `<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>`;
-    }
-
-    // Lado direito (Escala)
-    if (e) {
-      // Faz o mesmo para a data da Escala
-      let dataEscalaLimpa = e.dataEscala ? formatarDataSimples(e.dataEscala).split(' ')[0] : '-';
-      html += `
-        <td style="border-left: 2px solid #000; white-space: nowrap;">${dataEscalaLimpa}</td>
-        <td style="text-align: center;">${e.totalEntregas}</td>
-        <td>${formatarMoeda(e.custoTotal)}</td>
-        <td>${formatarMoeda(e.ticketMedio)}</td>
-        <td style="text-align: center;">-</td>
-      `;
-    } else {
-      html += `<td style="border-left: 2px solid #000;">-</td><td style="text-align: center;">-</td><td>-</td><td>-</td><td style="text-align: center;">-</td>`;
-    }
-
-    html += `</tr>`;
-  }
-
+  balancosSemanais.forEach(b => {
+    html += `<tr><td>${extrairDataAbreviada(b.dataRegistro)}</td><td>${b.periodo}</td><td>${formatarMoeda(b.totalCredito)}</td><td>${formatarMoeda(b.totalFaturas)}</td><td>${formatarMoeda(b.saldo)}</td></tr>`;
+  });
   html += `</tbody></table>`;
 
   let containerPrint = document.getElementById('relatorioImpressao');
   containerPrint.innerHTML = html;
   containerPrint.style.display = 'block';
-
   window.print();
-  
   containerPrint.style.display = 'none';
 }
 
-
 async function excluirBalancoSemanal(idBal) {
-  let confirma = await cConfirm('Apagar Balanço', 'Deseja excluir este histórico de fechamento? (Não afetará as planilhas extraídas)');
+  let confirma = await cConfirm('Apagar Balanço', 'Deseja excluir este histórico?');
   if (confirma) {
     balancosSemanais = balancosSemanais.filter(b => b.id !== idBal);
-    renderizarTabelaFechamentosSalvos(); salvarDadosLocalmente();
+    renderizarTabelaFechamentosSalvos(); 
+    salvarDadosLocalmente();
   }
 }
 
+// ==========================================
+// MOTOR DE SINCRONIZAÇÃO EM TEMPO REAL (3 segundos)
+// ==========================================
+setInterval(async () => {
+  try {
+    let response = await fetch(API_URL + "?t=" + new Date().getTime());
+    let dadosAPI = await response.json();
+    
+    if (dadosAPI["DADOS_SISTEMA_TRANSMARINA"]) {
+      let dadosNuvemString = dadosAPI["DADOS_SISTEMA_TRANSMARINA"];
+      let bdNuvem = JSON.parse(dadosNuvemString);
+      let bdLocalStr = localStorage.getItem('transmarina_bd_cache');
+      
+      if (bdLocalStr !== dadosNuvemString) {
+          localStorage.setItem('transmarina_bd_cache', dadosNuvemString);
+          
+          if (bdNuvem.depositos) depositos = bdNuvem.depositos;
+          if (bdNuvem.escalasDiariasSalvas) escalasDiariasSalvas = bdNuvem.escalasDiariasSalvas;
+          if (bdNuvem.balancosSemanais) balancosSemanais = bdNuvem.balancosSemanais;
+          if (bdNuvem.todosRegistrosMaster) todosRegistrosMaster = bdNuvem.todosRegistrosMaster;
+          
+          atualizarTelas(); 
+      }
+    }
+  } catch(e) {}
+}, 3000);
 
-// Start
 carregarDadosLocais();
