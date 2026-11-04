@@ -211,6 +211,21 @@
         <h2>Consolidado Semanal das Escalas</h2>
         <p style="font-size: 13px; color: #666;">Gasto diário das escalas abatido do Crédito Pré-Pago.</p>
 
+        <!-- NOVO: Formulário de Lançamento de Depósito Direto na Aba de Escalas -->
+        <div style="background: #fdfdfd; padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin: 15px 0; display: flex; gap: 15px; align-items: flex-end; border-left: 4px solid #27ae60;">
+          <div style="flex: 1;">
+            <label style="font-size: 12px; font-weight: bold; color: #555; display:block; margin-bottom: 5px;">Data do Depósito (Opcional):</label>
+            <input type="date" id="dataDepositoEscala" style="margin-bottom: 0; width: 100%;">
+          </div>
+          <div style="flex: 1;">
+            <label style="font-size: 12px; font-weight: bold; color: #555; display:block; margin-bottom: 5px;">Valor do Depósito (R$)*:</label>
+            <input type="number" step="0.01" id="valorDepositoEscala" placeholder="Ex: 50000" style="margin-bottom: 0; width: 100%;">
+          </div>
+          <div>
+            <button type="button" class="btn-sucesso" onclick="adicionarDepositoPelaEscala()" style="padding: 10px 20px; white-space: nowrap;">Adicionar Depósito</button>
+          </div>
+        </div>
+
         <div class="cards">
           <div class="card azul">
             <h3>Crédito (Teto)</h3>
@@ -232,11 +247,12 @@
 
         <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
 
-        <div class="table-container" style="max-height: 250px;">
-          <table id="tabelaEscalasDiariasSalvas">
+        <div class="table-container" style="max-height: 250px; overflow-x: auto;">
+          <table id="tabelaEscalasDiariasSalvas" style="min-width: 600px;">
             <thead>
               <tr>
                 <th>Data</th>
+                <th>Período Coberto</th>
                 <th>Entregas</th>
                 <th>Custo Previsto</th>
                 <th>Ticket Médio</th>
@@ -244,7 +260,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr id="linhaVaziaEscalasSalvas"><td colspan="5" style="text-align:center; color:#888;">Nenhuma escala salva.</td></tr>
+              <tr id="linhaVaziaEscalasSalvas"><td colspan="6" style="text-align:center; color:#888;">Nenhuma escala salva.</td></tr>
             </tbody>
           </table>
         </div>
