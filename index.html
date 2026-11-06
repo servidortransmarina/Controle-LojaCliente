@@ -211,6 +211,24 @@
         <h2>Consolidado Semanal das Escalas</h2>
         <p style="font-size: 13px; color: #666;">Gasto diário das escalas abatido do Crédito Pré-Pago.</p>
 
+        <!-- INÍCIO: Filtro de Período para as Escalas e Depósitos -->
+        <div style="background: #f1f5f9; padding: 15px; border: 1px solid #cbd5e1; border-radius: 8px; margin: 15px 0; display: flex; gap: 15px; align-items: flex-end; border-left: 4px solid #64748b;">
+          <div style="flex: 1;">
+            <label style="font-size: 12px; font-weight: bold; color: #555; display:block; margin-bottom: 5px;">Data Inicial:</label>
+            <input type="date" id="filtroEscalaInicio" onchange="renderizarTabelaEscalasSalvas()" style="margin-bottom: 0; width: 100%;">
+          </div>
+          <div style="flex: 1;">
+            <label style="font-size: 12px; font-weight: bold; color: #555; display:block; margin-bottom: 5px;">Data Final:</label>
+            <input type="date" id="filtroEscalaFim" onchange="renderizarTabelaEscalasSalvas()" style="margin-bottom: 0; width: 100%;">
+          </div>
+          <div>
+            <button type="button" class="btn-alerta" onclick="document.getElementById('filtroEscalaInicio').value=''; document.getElementById('filtroEscalaFim').value=''; renderizarTabelaEscalasSalvas();" style="padding: 10px 15px; margin: 0; white-space: nowrap;">Limpar Filtro</button>
+          </div>
+        </div>
+        <!-- FIM: Filtro -->
+
+        <!-- Formulário de Lançamento de Depósito Direto... (mantém o que já estava aqui) -->
+
         <!-- NOVO: Formulário de Lançamento de Depósito Direto na Aba de Escalas -->
         <div style="background: #fdfdfd; padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin: 15px 0; display: flex; gap: 15px; align-items: flex-end; border-left: 4px solid #27ae60;">
           <div style="flex: 1;">
@@ -228,11 +246,11 @@
 
         <div class="cards">
           <div class="card azul">
-            <h3>Crédito (Teto)</h3>
+            <h3>Crédito Semanal</h3>
             <div class="valor" id="txtSemanaCreditoTotal">R$ 0,00</div>
           </div>
           <div class="card vermelho">
-            <h3>Valor Gasto</h3>
+            <h3>Gasto Semanal</h3>
             <div class="valor" id="txtSemanaCustoTotal">R$ 0,00</div>
           </div>
           <div class="card verde" id="cardSemanaSaldoCredito">
