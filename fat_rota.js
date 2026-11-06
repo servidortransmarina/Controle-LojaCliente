@@ -982,15 +982,55 @@ function obterPeriodoDaSemana(dataLimpa) {
 
 function renderizarTabelaEscalasSalvas() {
   let elQtd = document.getElementById('qtdEscalasTab');
-  if (elQtd) elQtd.innerText = escalasDiariasSalvas.length;
 
   let tbody = document.getElementById('tabelaEscalasDiariasSalvas').getElementsByTagName('tbody')[0];
   if (!tbody) return;
   tbody.innerHTML = '';
 
+  // 1. Resgata os valores digitados no filtro
+  let dataInicio = document.getElementById('filtroEscalaInicio') ? document.getElementById('filtroEscalaInicio').value : '';
+  let dataFim = document.getElementById('filtroEscalaFim') ? document.getElementById('filtroEscalaFim').value : '';
+
+  // Função auxiliar para converter datas no formato DD/MM/AAAA para o padrão de comparação YYYY-MM-DD
+  const converterParaISO = (dataStr) => {
+      if (!dataStr || dataStr === '-') return null;
+      let str = String(dataStr).trim();
+      if (str.includes('-') && str.split('-')[0].length === 4) return str.split('T')[0];
+      if (str.includes('/')) {
+          let p = str.split('/');
+          if (p.length === 3) return `${p[2]}-${p[1]}-${p[0]}`;
+      }
+      return null;
+  };
+
+  // 2. Filtra as escalas ativas com base nas datas
+  let escalasFiltradas = escalasDiariasSalvas.filter(e => {
+      if (!dataInicio && !dataFim) return true;
+      let dataLimpa = extrairDataAbreviada(e.dataEscala);
+      let isoData = converterParaISO(dataLimpa);
+      if (!isoData) return true;
+      if (dataInicio && isoData < dataInicio) return false;
+      if (dataFim && isoData > dataFim) return false;
+      return true;
+  });
+
+  // 3. Filtra os depósitos (Teto) que foram feitos no mesmo período
+  let depositosFiltrados = depositos.filter(d => {
+      if (!dataInicio && !dataFim) return true;
+      let dataLimpa = extrairDataAbreviada(d.data);
+      let isoData = converterParaISO(dataLimpa);
+      if (!isoData) return true;
+      if (dataInicio && isoData < dataInicio) return false;
+      if (dataFim && isoData > dataFim) return false;
+      return true;
+  });
+
+  if (elQtd) elQtd.innerText = escalasFiltradas.length;
+
   let somaCustoSemana = 0, somaEntregasSemana = 0;
 
-  escalasDiariasSalvas.forEach(e => {
+  // 4. Constrói a tabela baseada apenas nos resultados filtrados
+  escalasFiltradas.forEach(e => {
     somaCustoSemana += e.custoTotal;
     somaEntregasSemana += e.totalEntregas;
 
@@ -1008,14 +1048,18 @@ function renderizarTabelaEscalasSalvas() {
     tr.insertCell(5).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirEscalaSalva(${e.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
   });
 
-  if (escalasDiariasSalvas.length === 0) tbody.innerHTML = '<tr id="linhaVaziaEscalasSalvas"><td colspan="6" style="text-align:center; color:#888;">Nenhuma escala.</td></tr>';
+  if (escalasFiltradas.length === 0) {
+    tbody.innerHTML = '<tr id="linhaVaziaEscalasSalvas"><td colspan="6" style="text-align:center; color:#888;">Nenhum registro encontrado neste período.</td></tr>';
+  }
 
+  // 5. Recalcula os valores dos cartões dinamicamente
   let ticketMedioSemanal = somaEntregasSemana > 0 ? (somaCustoSemana / somaEntregasSemana) : 0;
   
-  // O Teto reflete diretamente o total depositado oficial (lançado por qualquer uma das duas telas)
-  let saldoCreditoSemana = totalDepositado - somaCustoSemana;
+  // O Teto reflete os depósitos que se enquadram no filtro
+  let tetoOperacional = depositosFiltrados.reduce((acc, d) => acc + d.valor, 0);
+  let saldoCreditoSemana = tetoOperacional - somaCustoSemana;
 
-  let elCred = document.getElementById('txtSemanaCreditoTotal'); if(elCred) elCred.innerText = formatarMoeda(totalDepositado);
+  let elCred = document.getElementById('txtSemanaCreditoTotal'); if(elCred) elCred.innerText = formatarMoeda(tetoOperacional);
   let elCusto = document.getElementById('txtSemanaCustoTotal'); if(elCusto) elCusto.innerText = formatarMoeda(somaCustoSemana);
   let elTick = document.getElementById('txtSemanaTicketMedioGeral'); if(elTick) elTick.innerText = formatarMoeda(ticketMedioSemanal);
   
