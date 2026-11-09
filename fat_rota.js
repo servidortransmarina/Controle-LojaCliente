@@ -1,7 +1,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbyz3wPotM_qv8_3rEjyKJS5ho9Tj2IGqwAgJ0jqyzGpnTPrwWBQHMrVUab_8bDUmFsbbg/exec";
 
 // ==========================================
-// 1. MOTOR DO MODAL PERSONALIZADO (SUBSTITUI ALERTS/PROMPTS)
+// 1. MOTOR DO MODAL PERSONALIZADO
 // ==========================================
 function showCustomModal(options) {
   return new Promise((resolve) => {
@@ -13,52 +13,61 @@ function showCustomModal(options) {
     const in2 = document.getElementById('modalInput2');
     const label1 = document.getElementById('modalLabel1');
     const label2 = document.getElementById('modalLabel2');
+    const selectContainer = document.getElementById('modalSelectContainer');
+    const selectEl = document.getElementById('modalSelect');
+    const selectLabel = document.getElementById('modalSelectLabel');
     const btnCancel = document.getElementById('modalBtnCancel');
     const btnOk = document.getElementById('modalBtnOk');
 
     titleEl.innerText = options.title || 'Aviso';
-    msgEl.innerText = options.message || '';
+    msgEl.innerHTML = options.message || ''; 
     btnOk.className = options.okBtnClass || 'modal-btn-ok';
     btnOk.innerText = options.okText || 'OK';
 
+    inputsEl.style.display = 'none';
+    selectContainer.style.display = 'none';
+    btnCancel.style.display = 'none';
+
     if (options.type === 'alert') {
-      btnCancel.style.display = 'none';
-      inputsEl.style.display = 'none';
+        
     } else if (options.type === 'confirm') {
       btnCancel.style.display = 'inline-block';
-      inputsEl.style.display = 'none';
       btnCancel.innerText = 'Cancelar';
     } else if (options.type === 'promptTarifa') {
       btnCancel.style.display = 'inline-block';
       inputsEl.style.display = 'block';
       btnCancel.innerText = 'Cancelar';
-      label1.innerText = options.label1;
-      in1.value = options.val1;
-      label2.innerText = options.label2;
-      in2.value = options.val2;
+      label1.innerText = options.label1; in1.value = options.val1;
+      label2.innerText = options.label2; in2.value = options.val2;
+    } else if (options.type === 'select') {
+      btnCancel.style.display = 'inline-block';
+      selectContainer.style.display = 'block';
+      btnCancel.innerText = 'Cancelar';
+      selectLabel.innerText = options.selectLabel || 'Selecione:';
+      
+      selectEl.innerHTML = '';
+      if (options.selectOptions) {
+          options.selectOptions.forEach(opt => {
+              let o = document.createElement('option');
+              o.value = opt.value;
+              o.innerText = opt.text;
+              selectEl.appendChild(o);
+          });
+      }
     }
 
     overlay.classList.add('show');
 
-    const cleanup = () => {
-      overlay.classList.remove('show');
-      btnOk.onclick = null;
-      btnCancel.onclick = null;
-    };
+    const cleanup = () => { overlay.classList.remove('show'); btnOk.onclick = null; btnCancel.onclick = null; };
 
     btnOk.onclick = () => {
       cleanup();
-      if (options.type === 'promptTarifa') {
-        resolve({ v1: in1.value, v2: in2.value });
-      } else {
-        resolve(true);
-      }
+      if (options.type === 'promptTarifa') resolve({ v1: in1.value, v2: in2.value });
+      else if (options.type === 'select') resolve({ selectedValue: selectEl.value, selectedText: selectEl.options[selectEl.selectedIndex].text });
+      else resolve(true);
     };
 
-    btnCancel.onclick = () => {
-      cleanup();
-      resolve(false);
-    };
+    btnCancel.onclick = () => { cleanup(); resolve(false); };
   });
 }
 
@@ -69,6 +78,7 @@ function cConfirm(title, message) { return showCustomModal({ type: 'confirm', ti
 // ==========================================
 // VARIÁVEIS DE ESTADO DO SISTEMA
 // ==========================================
+// Caixa 1: Financeiro (Área de Lançamentos)
 let totalDepositado = 0;
 let depositos = [];
 let proximoIdDeposito = 1;
@@ -76,10 +86,15 @@ let proximoIdDeposito = 1;
 let planilhasLancadas = [];
 let todosRegistrosMaster = [];
 let proximoIdPlanilha = 1;
-
 let balancosSemanais = [];
 let proximoIdBalanco = 1;
 let custoAtualFiltradoGlobal = 0;
+
+// Caixa 2: Rotas (Balanços e Escalas)
+let depositosEscalas = [];
+let proximoIdDepositoEscala = 1;
+let historicoEscalas = [];
+let proximoIdHistoricoEscala = 1;
 
 let tarifasPorCodigo = {
   "69": { nome: "DIVINOPOLIS - COD 69", valorAte24: 72.91, valorAcima25: 69.41 },
@@ -98,7 +113,9 @@ function salvarDadosLocalmente() {
   let dadosSincronizados = {
     depositos, proximoIdDeposito, planilhasLancadas, todosRegistrosMaster,
     proximoIdPlanilha, balancosSemanais, proximoIdBalanco, tarifasPorCodigo,
-    escalasDiariasSalvas, proximoIdEscalaDiaria
+    escalasDiariasSalvas, proximoIdEscalaDiaria,
+    historicoEscalas, proximoIdHistoricoEscala,
+    depositosEscalas, proximoIdDepositoEscala
   };
 
   localStorage.setItem('transmarina_bd_cache', JSON.stringify(dadosSincronizados));
@@ -124,6 +141,10 @@ async function carregarDadosLocais() {
     if (bd.tarifasPorCodigo) tarifasPorCodigo = bd.tarifasPorCodigo;
     if (bd.escalasDiariasSalvas) escalasDiariasSalvas = bd.escalasDiariasSalvas;
     if (bd.proximoIdEscalaDiaria) proximoIdEscalaDiaria = bd.proximoIdEscalaDiaria;
+    if (bd.historicoEscalas) historicoEscalas = bd.historicoEscalas;
+    if (bd.proximoIdHistoricoEscala) proximoIdHistoricoEscala = bd.proximoIdHistoricoEscala;
+    if (bd.depositosEscalas) depositosEscalas = bd.depositosEscalas;
+    if (bd.proximoIdDepositoEscala) proximoIdDepositoEscala = bd.proximoIdDepositoEscala;
     
     atualizarTelas();
   }
@@ -140,6 +161,10 @@ async function carregarDadosLocais() {
       if (bd.todosRegistrosMaster) todosRegistrosMaster = bd.todosRegistrosMaster;
       if (bd.tarifasPorCodigo) tarifasPorCodigo = bd.tarifasPorCodigo;
       if (bd.escalasDiariasSalvas) escalasDiariasSalvas = bd.escalasDiariasSalvas;
+      if (bd.historicoEscalas) historicoEscalas = bd.historicoEscalas;
+      if (bd.proximoIdHistoricoEscala) proximoIdHistoricoEscala = bd.proximoIdHistoricoEscala;
+      if (bd.depositosEscalas) depositosEscalas = bd.depositosEscalas;
+      if (bd.proximoIdDepositoEscala) proximoIdDepositoEscala = bd.proximoIdDepositoEscala;
       
       localStorage.setItem('transmarina_bd_cache', JSON.stringify(bd));
       atualizarTelas();
@@ -150,13 +175,14 @@ async function carregarDadosLocais() {
 }
 
 function atualizarTelas() {
-  recalcularTotalDepositos();
-  renderizarTabelaDepositos();
+  recalcularTotalDepositosFinanceiro();
+  renderizarTabelaDepositosFinanceiro();
   renderizarTabelaTarifasCodigo();
   atualizarResumoPlanilhas();
   renderizarTabelaFechamentosSalvos();
   renderizarTabelaEscalasSalvas();
-  aplicarFiltros();
+  renderizarTabelaHistoricoEscalas();
+  renderizarFiltrosFinanceiroInstantaneo();
 }
 
 // ==========================================
@@ -192,16 +218,66 @@ function formatarDataBR(isoString) {
   return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : isoString;
 }
 
+const converterParaISO = (dataStr) => {
+    if (!dataStr || dataStr === '-') return null;
+    let str = String(dataStr).trim();
+    if (str.includes('-') && str.split('-')[0].length === 4) return str.split('T')[0];
+    if (str.includes('/')) {
+        let p = str.split('/');
+        if (p.length === 3) return `${p[2]}-${p[1]}-${p[0]}`;
+    }
+    return null;
+};
+
+function extrairDataAbreviada(dataRaw) {
+  if (!dataRaw) return '-';
+  let str = String(dataRaw).trim();
+  
+  if (str.match(/[a-zA-Z]/)) {
+    let d = new Date(str);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR'); 
+  }
+  
+  if (str.includes('-') && str.split('-')[0].length === 4) {
+    let p = str.split('T')[0].split('-');
+    return `${p[2]}/${p[1]}/${p[0]}`;
+  }
+  
+  if (str.includes('.')) {
+    return str.replace(/\./g, '/').split(' ')[0];
+  }
+  
+  if (str.includes('/')) {
+    return str.split(' ')[0];
+  }
+  
+  return str;
+}
+
+function formatarDataSimples(dataStr) {
+  if (!dataStr) return '-';
+  if (String(dataStr).includes('GMT') || String(dataStr).includes('Z') || String(dataStr).includes('Horário') || String(dataStr).match(/[a-zA-Z]/)) {
+    let d = new Date(dataStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('pt-BR');
+    }
+  }
+  return extrairDataAbreviada(dataStr);
+}
+
 function trocarAba(idAba, elemento) {
   document.querySelectorAll('.tab-content').forEach(aba => aba.classList.remove('active'));
   document.querySelectorAll('.nav-tab-link').forEach(btn => btn.classList.remove('active'));
   document.getElementById(idAba).classList.add('active');
   elemento.classList.add('active');
+  
   if (idAba === 'abaBalancosEscalas') renderizarTabelaEscalasSalvas();
+  if (idAba === 'abaHistoricoSemanalEscalas') renderizarTabelaHistoricoEscalas();
+  if (idAba === 'abaDashboard') renderizarFiltrosFinanceiroInstantaneo();
 }
 
 // ==========================================
-// DEPÓSITOS PRÉ-PAGOS (AMBAS AS TELAS)
+// CAIXA 1: DEPÓSITOS (FINANCEIRO / ÁREA DE LANÇAMENTO)
 // ==========================================
 async function adicionarDeposito(event) {
   if (event) event.preventDefault(); 
@@ -213,59 +289,32 @@ async function adicionarDeposito(event) {
     depositos.push({ id: proximoIdDeposito++, data: dataInput ? formatarDataBR(dataInput) : new Date().toLocaleDateString('pt-BR'), valor: valor });
     document.getElementById('valorDeposito').value = '';
     document.getElementById('dataDeposito').value = '';
-    recalcularTotalDepositos();
-    renderizarTabelaDepositos();
-    aplicarFiltros();
+    
+    recalcularTotalDepositosFinanceiro();
+    renderizarTabelaDepositosFinanceiro();
+    renderizarFiltrosFinanceiroInstantaneo();
     salvarDadosLocalmente();
-  } else {
-    cAlertError('Atenção', 'Digite um valor de depósito válido.');
-  }
-}
-
-// NOVO: Atalho para lançar depósito direto na aba de Balanços & Escalas com Data e Valor
-async function adicionarDepositoPelaEscala() {
-  let dataInput = document.getElementById('dataDepositoEscala').value;
-  let valorInput = document.getElementById('valorDepositoEscala').value;
-  let valor = parseFloat(valorInput);
-
-  if (!isNaN(valor) && valor > 0) {
-    depositos.push({ 
-      id: proximoIdDeposito++, 
-      data: dataInput ? formatarDataBR(dataInput) : new Date().toLocaleDateString('pt-BR'), 
-      valor: valor 
-    });
-    
-    document.getElementById('valorDepositoEscala').value = '';
-    document.getElementById('dataDepositoEscala').value = '';
-    
-    recalcularTotalDepositos();
-    renderizarTabelaDepositos();
-    aplicarFiltros();
-    salvarDadosLocalmente();
-    
-    cAlert('Depósito Adicionado', 'O valor e data foram lançados com sucesso e o Teto atualizado!');
   } else {
     cAlertError('Atenção', 'Digite um valor de depósito válido.');
   }
 }
 
 async function excluirDeposito(idDeposito) {
-  let confirma = await cConfirm('Excluir', 'Deseja realmente excluir este lançamento de depósito pré-pago?');
+  let confirma = await cConfirm('Excluir', 'Deseja realmente excluir este lançamento de depósito pré-pago do Financeiro?');
   if (confirma) {
     depositos = depositos.filter(d => d.id !== idDeposito);
-    recalcularTotalDepositos();
-    renderizarTabelaDepositos();
-    aplicarFiltros();
+    recalcularTotalDepositosFinanceiro();
+    renderizarTabelaDepositosFinanceiro();
+    renderizarFiltrosFinanceiroInstantaneo();
     salvarDadosLocalmente();
   }
 }
 
-function recalcularTotalDepositos() {
+function recalcularTotalDepositosFinanceiro() {
   totalDepositado = depositos.reduce((acc, d) => acc + d.valor, 0);
-  renderizarTabelaEscalasSalvas();
 }
 
-function renderizarTabelaDepositos() {
+function renderizarTabelaDepositosFinanceiro() {
   let tbody = document.getElementById('tabelaDepositos').getElementsByTagName('tbody')[0];
   tbody.innerHTML = depositos.length === 0 ? '<tr id="linhaVaziaDepositos"><td colspan="3" style="text-align:center; color:#888;">Nenhum depósito cadastrado.</td></tr>' : '';
   depositos.forEach(d => {
@@ -274,6 +323,32 @@ function renderizarTabelaDepositos() {
     row.insertCell(1).innerText = formatarMoeda(d.valor);
     row.insertCell(2).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirDeposito(${d.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
   });
+}
+
+// ==========================================
+// CAIXA 2: DEPÓSITOS DAS ESCALAS (ROTAS)
+// ==========================================
+async function adicionarDepositoPelaEscala() {
+  let dataInput = document.getElementById('dataDepositoEscala').value;
+  let valorInput = document.getElementById('valorDepositoEscala').value;
+  let valor = parseFloat(valorInput);
+
+  if (!isNaN(valor) && valor > 0) {
+    depositosEscalas.push({ 
+      id: proximoIdDepositoEscala++, 
+      data: dataInput ? formatarDataBR(dataInput) : new Date().toLocaleDateString('pt-BR'), 
+      valor: valor 
+    });
+    
+    document.getElementById('valorDepositoEscala').value = '';
+    document.getElementById('dataDepositoEscala').value = '';
+    
+    renderizarTabelaEscalasSalvas(); // Atualiza a UI na hora
+    salvarDadosLocalmente();
+    cAlert('Crédito Adicionado', 'O valor foi adicionado exclusivamente ao painel de Rotas (Balanços e Escalas)!');
+  } else {
+    cAlertError('Atenção', 'Digite um valor de depósito válido.');
+  }
 }
 
 // ==========================================
@@ -615,8 +690,237 @@ async function excluirEscalaSalva(idEscala) {
   }
 }
 
+function obterPeriodoDaSemana(dataLimpa) {
+  if (!dataLimpa || dataLimpa === '-') return '-';
+  
+  let partes = dataLimpa.split('/');
+  if (partes.length < 3) return dataLimpa;
+
+  let d = new Date(parseInt(partes[2]), parseInt(partes[1]) - 1, parseInt(partes[0]));
+  if (isNaN(d.getTime())) return dataLimpa;
+
+  let diaSemana = d.getDay(); 
+  let difSegunda = d.getDate() - diaSemana + (diaSemana === 0 ? -6 : 1);
+  let segunda = new Date(d.setDate(difSegunda));
+  
+  let domingo = new Date(segunda);
+  domingo.setDate(segunda.getDate() + 6);
+
+  let diaSeg = String(segunda.getDate()).padStart(2, '0');
+  let mesSeg = String(segunda.getMonth() + 1).padStart(2, '0');
+  let anoSeg = segunda.getFullYear();
+
+  let diaDom = String(domingo.getDate()).padStart(2, '0');
+  let mesDom = String(domingo.getMonth() + 1).padStart(2, '0');
+  let anoDom = domingo.getFullYear();
+
+  return `${diaSeg}/${mesSeg}/${anoSeg} a ${diaDom}/${mesDom}/${anoDom}`;
+}
+
+
 // ==========================================
-// FATURAS QUINZENAIS (BALANÇO)
+// RENDERIZAÇÃO INTELIGENTE DO CONSOLIDADO (ROTAS)
+// ==========================================
+function renderizarTabelaEscalasSalvas() {
+  let elQtd = document.getElementById('qtdEscalasTab');
+
+  let tbody = document.getElementById('tabelaEscalasDiariasSalvas');
+  if (tbody) tbody = tbody.getElementsByTagName('tbody')[0];
+  if (!tbody) return;
+  
+  tbody.innerHTML = '';
+
+  let dataInicio = document.getElementById('filtroEscalaInicio') ? document.getElementById('filtroEscalaInicio').value : '';
+  let dataFim = document.getElementById('filtroEscalaFim') ? document.getElementById('filtroEscalaFim').value : '';
+
+  let escalasFiltradas = escalasDiariasSalvas.filter(e => {
+      if (!dataInicio && !dataFim) return true;
+      let dataLimpa = extrairDataAbreviada(e.dataEscala);
+      let isoData = converterParaISO(dataLimpa);
+      if (!isoData) return true;
+      if (dataInicio && isoData < dataInicio) return false;
+      if (dataFim && isoData > dataFim) return false;
+      return true;
+  });
+
+  let depositosEscalasFiltrados = depositosEscalas.filter(d => {
+      if (!dataInicio && !dataFim) return true;
+      let dataLimpa = extrairDataAbreviada(d.data);
+      let isoData = converterParaISO(dataLimpa);
+      if (!isoData) return true;
+      if (dataInicio && isoData < dataInicio) return false;
+      if (dataFim && isoData > dataFim) return false;
+      return true;
+  });
+
+  if (elQtd) elQtd.innerText = escalasFiltradas.length;
+
+  let somaCustoSemana = 0, somaEntregasSemana = 0;
+
+  escalasFiltradas.forEach(e => {
+    somaCustoSemana += e.custoTotal;
+    somaEntregasSemana += e.totalEntregas;
+
+    let tr = tbody.insertRow();
+    let dataFormatada = formatarDataSimples(e.dataEscala);
+    tr.insertCell(0).innerHTML = `<span class="box-info" style="white-space: nowrap; font-weight: 600;">${dataFormatada}</span>`;
+    
+    let periodoCalculado = obterPeriodoDaSemana(dataFormatada);
+    tr.insertCell(1).innerHTML = `<span style="font-size: 11px; color: #555; white-space: nowrap;">${periodoCalculado}</span>`;
+    
+    tr.insertCell(2).innerHTML = `<span style="font-weight: 600; color: #333; font-size: 14px;">${e.totalEntregas}</span>`;
+    tr.insertCell(3).innerHTML = `<span class="box-numero">${formatarMoeda(e.custoTotal)}</span>`;
+    tr.insertCell(4).innerHTML = `<span class="box-numero">${formatarMoeda(e.ticketMedio)}</span>`;
+    tr.insertCell(5).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirEscalaSalva(${e.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
+  });
+
+  if (escalasFiltradas.length === 0) {
+    tbody.innerHTML = '<tr id="linhaVaziaEscalasSalvas"><td colspan="6" style="text-align:center; color:#888;">Nenhum registro encontrado neste período.</td></tr>';
+  }
+
+  let ticketMedioSemanal = somaEntregasSemana > 0 ? (somaCustoSemana / somaEntregasSemana) : 0;
+  
+  let tetoOperacional = depositosEscalasFiltrados.reduce((acc, d) => acc + d.valor, 0);
+  let saldoCreditoSemana = tetoOperacional - somaCustoSemana;
+
+  let elCred = document.getElementById('txtSemanaCreditoTotal'); if(elCred) elCred.innerText = formatarMoeda(tetoOperacional);
+  let elCusto = document.getElementById('txtSemanaCustoTotal'); if(elCusto) elCusto.innerText = formatarMoeda(somaCustoSemana);
+  let elTick = document.getElementById('txtSemanaTicketMedioGeral'); if(elTick) elTick.innerText = formatarMoeda(ticketMedioSemanal);
+  
+  let cardSaldo = document.getElementById('cardSemanaSaldoCredito');
+  let txtSaldo = document.getElementById('txtSemanaSaldoCredito');
+  if(txtSaldo && cardSaldo) {
+    txtSaldo.innerText = formatarMoeda(saldoCreditoSemana);
+    cardSaldo.className = saldoCreditoSemana >= 0 ? "card verde" : "card vermelho";
+  }
+}
+
+// ==========================================
+// FECHAMENTO DA EQUIPE DE ESCALAS (ROTAS) - COM CTRL+Z
+// ==========================================
+async function salvarFechamentoEscalas() {
+  let elTeto = document.getElementById('txtSemanaCreditoTotal');
+  let elCusto = document.getElementById('txtSemanaCustoTotal');
+  let elTicket = document.getElementById('txtSemanaTicketMedioGeral');
+  
+  let valTeto = elTeto ? elTeto.innerText : 'R$ 0,00';
+  let valCusto = elCusto ? elCusto.innerText : 'R$ 0,00';
+  let valTicket = elTicket ? elTicket.innerText : 'R$ 0,00';
+
+  let numTeto = converterParaNumero(valTeto);
+  let numCusto = converterParaNumero(valCusto);
+  
+  if (numTeto === 0 && numCusto === 0) {
+      cAlertError('Painel Vazio', 'Não há valores filtrados para serem salvos.');
+      return;
+  }
+
+  let confirma = await cConfirm('Salvar Balanço Semanal (Rotas)', `Deseja salvar o fechamento atual e limpar as escalas/depósitos filtrados da tela?\n\nCrédito Utilizado: ${valTeto}\nValor Gasto: ${valCusto}`);
+  if (!confirma) return;
+
+  let dataInicio = document.getElementById('filtroEscalaInicio').value;
+  let dataFim = document.getElementById('filtroEscalaFim').value;
+  let periodo = (dataInicio && dataFim) ? `${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}` : 'Período Geral';
+
+  // SEPARA OS QUE VÃO EMBORA E OS QUE FICAM NA TELA
+  let escalasRemovidas = [];
+  let escalasRestantes = [];
+  escalasDiariasSalvas.forEach(e => {
+      let manter = false;
+      if (!dataInicio && !dataFim) { manter = false; }
+      else {
+          let isoData = converterParaISO(extrairDataAbreviada(e.dataEscala));
+          if (!isoData) manter = false; 
+          else if (dataInicio && isoData < dataInicio) manter = true; 
+          else if (dataFim && isoData > dataFim) manter = true; 
+          else manter = false;
+      }
+      if (manter) escalasRestantes.push(e);
+      else escalasRemovidas.push(e);
+  });
+  escalasDiariasSalvas = escalasRestantes;
+
+  let depositosRemovidos = [];
+  let depositosRestantes = [];
+  depositosEscalas.forEach(d => {
+      let manter = false;
+      if (!dataInicio && !dataFim) { manter = false; }
+      else {
+          let isoData = converterParaISO(extrairDataAbreviada(d.data));
+          if (!isoData) manter = false; 
+          else if (dataInicio && isoData < dataInicio) manter = true; 
+          else if (dataFim && isoData > dataFim) manter = true; 
+          else manter = false;
+      }
+      if (manter) depositosRestantes.push(d);
+      else depositosRemovidos.push(d);
+  });
+  depositosEscalas = depositosRestantes;
+
+  // SALVA O HISTÓRICO COM OS DADOS ORIGINAIS DENTRO
+  historicoEscalas.push({
+      id: proximoIdHistoricoEscala++,
+      dataRegistro: new Date().toLocaleDateString('pt-BR'),
+      periodo: periodo,
+      creditoUtilizado: numTeto,
+      valorGasto: numCusto,
+      saldo: numTeto - numCusto,
+      ticketMedio: converterParaNumero(valTicket),
+      escalasOriginais: escalasRemovidas, // <--- GUARDA AQUI
+      depositosOriginais: depositosRemovidos // <--- GUARDA AQUI
+  });
+
+  renderizarTabelaEscalasSalvas();
+  renderizarTabelaHistoricoEscalas();
+  salvarDadosLocalmente();
+
+  cAlert('Balanço de Rotas Salvo', 'O histórico foi arquivado com sucesso!\n\n(Se precisar, ao excluir este histórico as escalas retornarão para a tela principal)');
+}
+
+function renderizarTabelaHistoricoEscalas() {
+  let tbody = document.getElementById('tabelaHistoricoEscalas');
+  if (!tbody) return;
+  tbody = tbody.getElementsByTagName('tbody')[0];
+  tbody.innerHTML = '';
+
+  if (historicoEscalas.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#888;">Nenhum balanço semanal de rotas foi salvo ainda.</td></tr>';
+      return;
+  }
+
+  historicoEscalas.forEach(h => {
+      let tr = tbody.insertRow();
+      tr.insertCell(0).innerHTML = `<span class="box-info" style="font-weight:bold;">${h.dataRegistro}</span>`;
+      tr.insertCell(1).innerText = h.periodo;
+      tr.insertCell(2).innerHTML = `<span style="font-weight: 600; color: #0288d1;">${formatarMoeda(h.creditoUtilizado)}</span>`;
+      tr.insertCell(3).innerHTML = `<span style="font-weight: 600; color: #c0392b;">${formatarMoeda(h.valorGasto)}</span>`;
+      
+      let colorSaldo = h.saldo >= 0 ? '#166534' : '#991b1b';
+      tr.insertCell(4).innerHTML = `<span style="font-weight: 900; color: ${colorSaldo};">${formatarMoeda(h.saldo)}</span>`;
+      
+      tr.insertCell(5).innerHTML = `<span class="box-numero">${formatarMoeda(h.ticketMedio)}</span>`;
+      tr.insertCell(6).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirHistoricoEscala(${h.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
+  });
+}
+
+// O BOTÃO DE EXCLUIR AGORA DEVOLVE OS DADOS ("CTRL+Z")
+async function excluirHistoricoEscala(idHist) {
+  let confirma = await cConfirm('Restaurar Escalas?', 'Tem certeza que deseja apagar este histórico de rotas?\n\nOs lançamentos e depósitos utilizados nele retornarão intactos para a tela principal (Ctrl+Z).');
+  if (confirma) {
+      let hist = historicoEscalas.find(h => h.id === idHist);
+      if (hist) {
+          if (hist.escalasOriginais) escalasDiariasSalvas.push(...hist.escalasOriginais);
+          if (hist.depositosOriginais) depositosEscalas.push(...hist.depositosOriginais);
+      }
+      historicoEscalas = historicoEscalas.filter(h => h.id !== idHist);
+      renderizarTabelaEscalasSalvas();
+      renderizarTabelaHistoricoEscalas();
+      salvarDadosLocalmente();
+  }
+}
+
+// ==========================================
+// FATURAS QUINZENAIS (BALANÇO FINANCEIRO)
 // ==========================================
 function localizarIndiceColuna(cabecalho, termos) {
   for (let i = 0; i < cabecalho.length; i++) {
@@ -684,7 +988,9 @@ async function processarArquivoExcel() {
         arquivosLidos++;
         if (arquivosLidos === files.length) {
           fileInput.value = '';
-          atualizarResumoPlanilhas(); aplicarFiltros(); salvarDadosLocalmente();
+          atualizarResumoPlanilhas(); 
+          renderizarFiltrosFinanceiroInstantaneo();
+          salvarDadosLocalmente();
           cAlert('Importação Completa', `${files.length} planilha(s) extraída(s).`);
         }
       }
@@ -699,7 +1005,9 @@ async function limparPlanilhasAnexadas() {
   if (confirma) {
     planilhasLancadas = []; todosRegistrosMaster = [];
     document.getElementById('inputArquivoExcel').value = '';
-    atualizarResumoPlanilhas(); aplicarFiltros(); salvarDadosLocalmente();
+    atualizarResumoPlanilhas(); 
+    renderizarFiltrosFinanceiroInstantaneo();
+    salvarDadosLocalmente();
   }
 }
 
@@ -708,13 +1016,19 @@ async function excluirPlanilha(idPlanilha) {
   if (confirma) {
     planilhasLancadas = planilhasLancadas.filter(p => p.id !== idPlanilha);
     todosRegistrosMaster = todosRegistrosMaster.filter(r => r.planilhaId !== idPlanilha);
-    atualizarResumoPlanilhas(); aplicarFiltros(); salvarDadosLocalmente();
+    atualizarResumoPlanilhas(); 
+    renderizarFiltrosFinanceiroInstantaneo();
+    salvarDadosLocalmente();
   }
 }
 
 function atualizarResumoPlanilhas() {
-  document.getElementById('qtdPlanilhasTab').innerText = planilhasLancadas.length;
-  let tbody = document.getElementById('tabelaPlanilhasLancadas').getElementsByTagName('tbody')[0];
+  let el = document.getElementById('qtdPlanilhasTab');
+  if(el) el.innerText = planilhasLancadas.length;
+  
+  let tbody = document.getElementById('tabelaPlanilhasLancadas');
+  if (!tbody) return;
+  tbody = tbody.getElementsByTagName('tbody')[0];
   tbody.innerHTML = '';
 
   if (planilhasLancadas.length === 0) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#888;">Nenhuma planilha.</td></tr>'; return; }
@@ -726,12 +1040,13 @@ function atualizarResumoPlanilhas() {
   });
 }
 
-let timeoutFiltro = null;
 function aplicarFiltros() {
-  clearTimeout(timeoutFiltro);
-  timeoutFiltro = setTimeout(() => {
-    let dataInicio = document.getElementById('filtroDataInicio').value;
-    let dataFim = document.getElementById('filtroDataFim').value;
+    renderizarFiltrosFinanceiroInstantaneo();
+}
+
+function renderizarFiltrosFinanceiroInstantaneo() {
+    let dataInicio = document.getElementById('filtroDataInicio') ? document.getElementById('filtroDataInicio').value : '';
+    let dataFim = document.getElementById('filtroDataFim') ? document.getElementById('filtroDataFim').value : '';
 
     let registrosFiltrados = todosRegistrosMaster.filter(r => {
       if (!r.dataNotaISO) return true; 
@@ -751,11 +1066,13 @@ function aplicarFiltros() {
     });
     
     renderizarTabelaCargas(registrosFiltrados);
-  }, 400);
 }
 
 function renderizarTabelaCargas(registros) {
-  let tbody = document.getElementById('tabelaCargas').getElementsByTagName('tbody')[0];
+  let tbody = document.getElementById('tabelaCargas');
+  if(tbody) tbody = tbody.getElementsByTagName('tbody')[0];
+  if(!tbody) return;
+  
   tbody.innerHTML = ''; 
   custoAtualFiltradoGlobal = 0;
 
@@ -813,81 +1130,111 @@ function renderizarTabelaCargas(registros) {
   atualizarDashboardValores(custoAtualFiltradoGlobal, registros.length);
 }
 
-function limparFiltros() { document.getElementById('filtroDataInicio').value = ''; document.getElementById('filtroDataFim').value = ''; aplicarFiltros(); }
+function limparFiltros() { 
+    if(document.getElementById('filtroDataInicio')) document.getElementById('filtroDataInicio').value = ''; 
+    if(document.getElementById('filtroDataFim')) document.getElementById('filtroDataFim').value = ''; 
+    renderizarFiltrosFinanceiroInstantaneo(); 
+}
 
 function atualizarDashboardValores(custoFiltrado, qtdRegistros) {
   let saldo = totalDepositado - custoFiltrado;
-  document.getElementById('txtTotalDepositado').innerText = formatarMoeda(totalDepositado);
-  document.getElementById('txtCustoTotal').innerText = formatarMoeda(custoFiltrado);
-  document.getElementById('txtSaldoDisponivel').innerText = formatarMoeda(saldo);
-  document.getElementById('qtdDepositos').innerText = `${depositos.length} lançamento(s)`;
-  document.getElementById('qtdLinhasPlanilha').innerText = `${qtdRegistros} registro(s) exibido(s)`;
+  let txtTotal = document.getElementById('txtTotalDepositado');
+  if(txtTotal) {
+      txtTotal.innerText = formatarMoeda(totalDepositado);
+      document.getElementById('txtCustoTotal').innerText = formatarMoeda(custoFiltrado);
+      document.getElementById('txtSaldoDisponivel').innerText = formatarMoeda(saldo);
+      document.getElementById('qtdDepositos').innerText = `${depositos.length} lançamento(s)`;
+      document.getElementById('qtdLinhasPlanilha').innerText = `${qtdRegistros} registro(s) exibido(s)`;
 
-  let cardSaldo = document.getElementById('cardSaldo'), statusSaldo = document.getElementById('statusSaldo'), alerta = document.getElementById('alertaCorte');
-  if (saldo < 0) { cardSaldo.className = "card vermelho"; alerta.style.display = "block"; statusSaldo.innerText = "Saldo Negativo"; } 
-  else { cardSaldo.className = "card verde"; alerta.style.display = "none"; statusSaldo.innerText = "Crédito OK"; }
+      let cardSaldo = document.getElementById('cardSaldo'), statusSaldo = document.getElementById('statusSaldo'), alerta = document.getElementById('alertaCorte');
+      if (saldo < 0) { cardSaldo.className = "card vermelho"; alerta.style.display = "block"; statusSaldo.innerText = "Saldo Negativo"; } 
+      else { cardSaldo.className = "card verde"; alerta.style.display = "none"; statusSaldo.innerText = "Crédito OK"; }
+  }
 }
 
+// ==========================================
+// FECHAMENTO FINANCEIRO - COM CTRL+Z
+// ==========================================
 async function salvarFechamentoSemanal() {
+  if (depositos.length === 0) {
+      let confirmaSemDep = await cConfirm('Aviso', 'Nenhum depósito cadastrado.\nDeseja fechar o balanço assumindo Crédito de R$ 0,00?');
+      if(!confirmaSemDep) return;
+  }
+
+  let opcoesDeAbatimento = depositos.map(d => ({ value: d.id, text: `Depósito: ${extrairDataAbreviada(d.data)} - ${formatarMoeda(d.valor)}` }));
+  if (depositos.length > 0) {
+      opcoesDeAbatimento.push({ value: 'TODOS', text: `ABATER DE TODOS OS DEPÓSITOS (${formatarMoeda(totalDepositado)})` });
+  }
+
+  let resposta = await showCustomModal({
+      type: 'select',
+      title: 'Salvar Balanço (Financeiro)',
+      message: `As planilhas filtradas somam <b>${formatarMoeda(custoAtualFiltradoGlobal)}</b>.<br><br>De onde você deseja abater este valor?`,
+      selectLabel: 'Selecione a Origem do Abatimento:',
+      selectOptions: opcoesDeAbatimento.length > 0 ? opcoesDeAbatimento : [{value: '0', text: 'Sem Depósito / R$ 0,00'}],
+      okText: 'Salvar e Abater',
+      okBtnClass: 'modal-btn-ok btn-sucesso'
+  });
+
+  if (!resposta) return; 
+
   let dataInicio = document.getElementById('filtroDataInicio').value;
   let dataFim = document.getElementById('filtroDataFim').value;
-
-  let datasDepositos = depositos.map(d => extrairDataAbreviada(d.data)).join(', ');
-  let infoDeposito = datasDepositos ? datasDepositos : 'S/ Depósito';
-
-  let periodoTexto = (dataInicio && dataFim) ? `${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}` : (dataInicio ? `A partir de ${formatarDataBR(dataInicio)}` : (dataFim ? `Até ${formatarDataBR(dataFim)}` : "Todas as datas"));
+  let periodoTexto = (dataInicio && dataFim) ? `${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}` : "Todas as datas";
   
-  let periodoCombinado = `<b>Depósito:</b> ${infoDeposito}<br><b>Faturas:</b> ${periodoTexto}`;
-  let saldoCalculado = totalDepositado - custoAtualFiltradoGlobal;
+  let valorCreditoAbatido = 0;
+  let infoDepositoStr = "";
+  
+  // SEPARA O DEPÓSITO QUE VAI EMBORA E OS QUE FICAM
+  let depositosRemovidos = [];
 
-  let novoBalanco = {
+  if (resposta.selectedValue === 'TODOS' || resposta.selectedValue === '0') {
+      valorCreditoAbatido = totalDepositado;
+      infoDepositoStr = depositos.length > 0 ? depositos.map(d => extrairDataAbreviada(d.data)).join(', ') : 'Sem Depósito';
+      depositosRemovidos = [...depositos];
+      depositos = []; 
+  } else {
+      let depEscolhido = depositos.find(d => d.id == resposta.selectedValue);
+      valorCreditoAbatido = depEscolhido.valor;
+      infoDepositoStr = extrairDataAbreviada(depEscolhido.data);
+      depositosRemovidos = [depEscolhido];
+      depositos = depositos.filter(d => d.id != resposta.selectedValue);
+  }
+
+  let periodoCombinado = `<b>Depósito:</b> ${infoDepositoStr}<br><b>Faturas:</b> ${periodoTexto}`;
+  let saldoCalculado = valorCreditoAbatido - custoAtualFiltradoGlobal;
+
+  balancosSemanais.push({
     id: proximoIdBalanco++, 
     dataRegistro: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
     periodo: periodoCombinado, 
-    totalCredito: totalDepositado, 
+    totalCredito: valorCreditoAbatido, 
     totalFaturas: custoAtualFiltradoGlobal, 
-    saldo: saldoCalculado
-  };
-
-  balancosSemanais.push(novoBalanco); 
+    saldo: saldoCalculado,
+    depositosOriginais: depositosRemovidos // <--- GUARDA AQUI
+  }); 
   
-  depositos = []; // Zera os depósitos oficiais após fechar o balanço semanal
-  recalcularTotalDepositos(); 
-  renderizarTabelaDepositos();
-  
-  document.getElementById('valorDeposito').value = ''; 
-  document.getElementById('dataDeposito').value = '';
-  document.getElementById('valorDepositoEscala').value = ''; 
-  document.getElementById('dataDepositoEscala').value = '';
-  
-  aplicarFiltros(); 
+  recalcularTotalDepositosFinanceiro(); 
+  renderizarTabelaDepositosFinanceiro();
+  renderizarTabelaFechamentosSalvos();
+  renderizarFiltrosFinanceiroInstantaneo();
   salvarDadosLocalmente(); 
   
-  cAlert('Balanço Gerado!', `Fechamento encerrado. Resultado: ${saldoCalculado >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'} de ${formatarMoeda(saldoCalculado)}.`);
-}
-
-function formatarDataSimples(dataStr) {
-  if (!dataStr) return '-';
-  if (String(dataStr).includes('GMT') || String(dataStr).includes('Z') || String(dataStr).includes('Horário') || String(dataStr).match(/[a-zA-Z]/)) {
-    let d = new Date(dataStr);
-    if (!isNaN(d.getTime())) {
-      return d.toLocaleDateString('pt-BR');
-    }
-  }
-  return extrairDataAbreviada(dataStr);
+  cAlert('Balanço Gerado!', `Fechamento encerrado.\nCrédito Utilizado: ${formatarMoeda(valorCreditoAbatido)}\nResultado: ${saldoCalculado >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'} de ${formatarMoeda(saldoCalculado)}.`);
 }
 
 function renderizarTabelaFechamentosSalvos() {
   let elQtd = document.getElementById('qtdBalançosTab'); 
   if (elQtd) elQtd.innerText = balancosSemanais.length;
   
-  let tbody = document.getElementById('tabelaFechamentosSalvos').getElementsByTagName('tbody')[0];
+  let tbody = document.getElementById('tabelaFechamentosSalvos');
   if (!tbody) return;
+  tbody = tbody.getElementsByTagName('tbody')[0];
   tbody.innerHTML = '';
   let somatoriaGeral = 0;
 
   if (balancosSemanais.length === 0) {
-    tbody.innerHTML = '<tr id="linhaVaziaBalanços"><td colspan="6" style="text-align:center; color:#888;">Nenhum balanço.</td></tr>';
+    tbody.innerHTML = '<tr id="linhaVaziaBalanços"><td colspan="6" style="text-align:center; color:#888;">Nenhum balanço salvo.</td></tr>';
     let elSomatoria = document.getElementById('txtSomatoriaGeralBalanços'); if (elSomatoria) elSomatoria.innerText = formatarMoeda(0);
     return;
   }
@@ -927,147 +1274,20 @@ function renderizarTabelaFechamentosSalvos() {
   }
 }
 
-// Limpeza blindada para DD/MM/AAAA em qualquer lugar do sistema
-function extrairDataAbreviada(dataRaw) {
-  if (!dataRaw) return '-';
-  let str = String(dataRaw).trim();
-  
-  if (str.match(/[a-zA-Z]/)) {
-    let d = new Date(str);
-    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR'); 
-  }
-  
-  if (str.includes('-') && str.split('-')[0].length === 4) {
-    let p = str.split('T')[0].split('-');
-    return `${p[2]}/${p[1]}/${p[0]}`;
-  }
-  
-  if (str.includes('.')) {
-    return str.replace(/\./g, '/').split(' ')[0];
-  }
-  
-  if (str.includes('/')) {
-    return str.split(' ')[0];
-  }
-  
-  return str;
-}
-
-function obterPeriodoDaSemana(dataLimpa) {
-  if (!dataLimpa || dataLimpa === '-') return '-';
-  
-  let partes = dataLimpa.split('/');
-  if (partes.length < 3) return dataLimpa;
-
-  let d = new Date(parseInt(partes[2]), parseInt(partes[1]) - 1, parseInt(partes[0]));
-  if (isNaN(d.getTime())) return dataLimpa;
-
-  let diaSemana = d.getDay(); 
-  let difSegunda = d.getDate() - diaSemana + (diaSemana === 0 ? -6 : 1);
-  let segunda = new Date(d.setDate(difSegunda));
-  
-  let domingo = new Date(segunda);
-  domingo.setDate(segunda.getDate() + 6);
-
-  let diaSeg = String(segunda.getDate()).padStart(2, '0');
-  let mesSeg = String(segunda.getMonth() + 1).padStart(2, '0');
-  let anoSeg = segunda.getFullYear();
-
-  let diaDom = String(domingo.getDate()).padStart(2, '0');
-  let mesDom = String(domingo.getMonth() + 1).padStart(2, '0');
-  let anoDom = domingo.getFullYear();
-
-  return `${diaSeg}/${mesSeg}/${anoSeg} a ${diaDom}/${mesDom}/${anoDom}`;
-}
-
-function renderizarTabelaEscalasSalvas() {
-  let elQtd = document.getElementById('qtdEscalasTab');
-
-  let tbody = document.getElementById('tabelaEscalasDiariasSalvas').getElementsByTagName('tbody')[0];
-  if (!tbody) return;
-  tbody.innerHTML = '';
-
-  // 1. Resgata os valores digitados no filtro
-  let dataInicio = document.getElementById('filtroEscalaInicio') ? document.getElementById('filtroEscalaInicio').value : '';
-  let dataFim = document.getElementById('filtroEscalaFim') ? document.getElementById('filtroEscalaFim').value : '';
-
-  // Função auxiliar para converter datas no formato DD/MM/AAAA para o padrão de comparação YYYY-MM-DD
-  const converterParaISO = (dataStr) => {
-      if (!dataStr || dataStr === '-') return null;
-      let str = String(dataStr).trim();
-      if (str.includes('-') && str.split('-')[0].length === 4) return str.split('T')[0];
-      if (str.includes('/')) {
-          let p = str.split('/');
-          if (p.length === 3) return `${p[2]}-${p[1]}-${p[0]}`;
-      }
-      return null;
-  };
-
-  // 2. Filtra as escalas ativas com base nas datas
-  let escalasFiltradas = escalasDiariasSalvas.filter(e => {
-      if (!dataInicio && !dataFim) return true;
-      let dataLimpa = extrairDataAbreviada(e.dataEscala);
-      let isoData = converterParaISO(dataLimpa);
-      if (!isoData) return true;
-      if (dataInicio && isoData < dataInicio) return false;
-      if (dataFim && isoData > dataFim) return false;
-      return true;
-  });
-
-  // 3. Filtra os depósitos (Teto) que foram feitos no mesmo período
-  let depositosFiltrados = depositos.filter(d => {
-      if (!dataInicio && !dataFim) return true;
-      let dataLimpa = extrairDataAbreviada(d.data);
-      let isoData = converterParaISO(dataLimpa);
-      if (!isoData) return true;
-      if (dataInicio && isoData < dataInicio) return false;
-      if (dataFim && isoData > dataFim) return false;
-      return true;
-  });
-
-  if (elQtd) elQtd.innerText = escalasFiltradas.length;
-
-  let somaCustoSemana = 0, somaEntregasSemana = 0;
-
-  // 4. Constrói a tabela baseada apenas nos resultados filtrados
-  escalasFiltradas.forEach(e => {
-    somaCustoSemana += e.custoTotal;
-    somaEntregasSemana += e.totalEntregas;
-
-    let tr = tbody.insertRow();
-    
-    let dataFormatada = formatarDataSimples(e.dataEscala);
-    tr.insertCell(0).innerHTML = `<span class="box-info" style="white-space: nowrap; font-weight: 600;">${dataFormatada}</span>`;
-    
-    let periodoCalculado = obterPeriodoDaSemana(dataFormatada);
-    tr.insertCell(1).innerHTML = `<span style="font-size: 11px; color: #555; white-space: nowrap;">${periodoCalculado}</span>`;
-    
-    tr.insertCell(2).innerHTML = `<span style="font-weight: 600; color: #333; font-size: 14px;">${e.totalEntregas}</span>`;
-    tr.insertCell(3).innerHTML = `<span class="box-numero">${formatarMoeda(e.custoTotal)}</span>`;
-    tr.insertCell(4).innerHTML = `<span class="box-numero">${formatarMoeda(e.ticketMedio)}</span>`;
-    tr.insertCell(5).innerHTML = `<button type="button" class="btn-perigo" onclick="excluirEscalaSalva(${e.id})" style="padding:5px 10px; font-size:12px;">Excluir</button>`;
-  });
-
-  if (escalasFiltradas.length === 0) {
-    tbody.innerHTML = '<tr id="linhaVaziaEscalasSalvas"><td colspan="6" style="text-align:center; color:#888;">Nenhum registro encontrado neste período.</td></tr>';
-  }
-
-  // 5. Recalcula os valores dos cartões dinamicamente
-  let ticketMedioSemanal = somaEntregasSemana > 0 ? (somaCustoSemana / somaEntregasSemana) : 0;
-  
-  // O Teto reflete os depósitos que se enquadram no filtro
-  let tetoOperacional = depositosFiltrados.reduce((acc, d) => acc + d.valor, 0);
-  let saldoCreditoSemana = tetoOperacional - somaCustoSemana;
-
-  let elCred = document.getElementById('txtSemanaCreditoTotal'); if(elCred) elCred.innerText = formatarMoeda(tetoOperacional);
-  let elCusto = document.getElementById('txtSemanaCustoTotal'); if(elCusto) elCusto.innerText = formatarMoeda(somaCustoSemana);
-  let elTick = document.getElementById('txtSemanaTicketMedioGeral'); if(elTick) elTick.innerText = formatarMoeda(ticketMedioSemanal);
-  
-  let cardSaldo = document.getElementById('cardSemanaSaldoCredito');
-  let txtSaldo = document.getElementById('txtSemanaSaldoCredito');
-  if(txtSaldo && cardSaldo) {
-    txtSaldo.innerText = formatarMoeda(saldoCreditoSemana);
-    cardSaldo.className = saldoCreditoSemana >= 0 ? "card verde" : "card vermelho";
+// O BOTÃO DE EXCLUIR AGORA DEVOLVE O DEPÓSITO ("CTRL+Z")
+async function excluirBalancoSemanal(idBal) {
+  let confirma = await cConfirm('Restaurar Depósito?', 'Deseja excluir este histórico do Financeiro?\n\nO depósito de crédito que foi utilizado retornará para a sua carteira.');
+  if (confirma) {
+    let bal = balancosSemanais.find(b => b.id === idBal);
+    if (bal && bal.depositosOriginais) {
+        depositos.push(...bal.depositosOriginais);
+    }
+    balancosSemanais = balancosSemanais.filter(b => b.id !== idBal);
+    recalcularTotalDepositosFinanceiro();
+    renderizarTabelaDepositosFinanceiro();
+    renderizarTabelaFechamentosSalvos(); 
+    renderizarFiltrosFinanceiroInstantaneo();
+    salvarDadosLocalmente();
   }
 }
 
@@ -1076,10 +1296,8 @@ function imprimirRelatorio() {
   let statusGeral = somatoriaBalanços >= 0 ? 'SUPERÁVIT' : 'DÉFICIT';
   
   let somaCustoEscala = escalasDiariasSalvas.reduce((acc, e) => acc + e.custoTotal, 0);
-  let somaEntregas = escalasDiariasSalvas.reduce((acc, e) => acc + e.totalEntregas, 0);
-  let ticketMedio = somaEntregas > 0 ? (somaCustoEscala / somaEntregas) : 0;
-  let balancoEscalas = totalDepositado - somaCustoEscala;
-
+  let tetoEscala = depositosEscalas.reduce((acc, d) => acc + d.valor, 0);
+  
   let html = `
     <div style="display: flex; align-items: center; margin-bottom: 20px;">
       <h1 style="margin: 0; color: #b10a0a; font-family: 'Arial Black', sans-serif;">TRANSMARINA</h1>
@@ -1087,17 +1305,17 @@ function imprimirRelatorio() {
 
     <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
       <div style="width: 48%;">
-        <h3 style="margin: 0 0 5px 0;">Histórico de Balanços Semanais</h3>
+        <h3 style="margin: 0 0 5px 0;">Histórico de Balanços Semanais (Financeiro)</h3>
         <span style="font-size: 11px; font-weight: bold; text-transform: uppercase;">Total Geral</span><br>
         <span style="font-size: 20px; font-weight: bold; color: ${somatoriaBalanços >= 0 ? '#166534' : '#991b1b'};">${formatarMoeda(somatoriaBalanços)} (${statusGeral})</span>
       </div>
 
       <div style="width: 48%;">
-        <h3 style="margin: 0 0 5px 0;">Consolidado Semanal das Escalas</h3>
+        <h3 style="margin: 0 0 5px 0;">Consolidado Atual (Rotas)</h3>
         <div style="display: flex; gap: 20px;">
           <div>
             <span style="font-size: 10px; font-weight: bold;">TETO (DEPÓSITOS)</span><br>
-            <span style="font-size: 16px; font-weight: bold; color: #0288d1;">${formatarMoeda(totalDepositado)}</span>
+            <span style="font-size: 16px; font-weight: bold; color: #0288d1;">${formatarMoeda(tetoEscala)}</span>
           </div>
           <div>
             <span style="font-size: 10px; font-weight: bold;">VALOR GASTO</span><br>
@@ -1121,15 +1339,6 @@ function imprimirRelatorio() {
   containerPrint.style.display = 'none';
 }
 
-async function excluirBalancoSemanal(idBal) {
-  let confirma = await cConfirm('Apagar Balanço', 'Deseja excluir este histórico?');
-  if (confirma) {
-    balancosSemanais = balancosSemanais.filter(b => b.id !== idBal);
-    renderizarTabelaFechamentosSalvos(); 
-    salvarDadosLocalmente();
-  }
-}
-
 // ==========================================
 // MOTOR DE SINCRONIZAÇÃO EM TEMPO REAL (3 segundos)
 // ==========================================
@@ -1150,6 +1359,10 @@ setInterval(async () => {
           if (bdNuvem.escalasDiariasSalvas) escalasDiariasSalvas = bdNuvem.escalasDiariasSalvas;
           if (bdNuvem.balancosSemanais) balancosSemanais = bdNuvem.balancosSemanais;
           if (bdNuvem.todosRegistrosMaster) todosRegistrosMaster = bdNuvem.todosRegistrosMaster;
+          if (bdNuvem.historicoEscalas) historicoEscalas = bdNuvem.historicoEscalas;
+          if (bdNuvem.proximoIdHistoricoEscala) proximoIdHistoricoEscala = bdNuvem.proximoIdHistoricoEscala;
+          if (bdNuvem.depositosEscalas) depositosEscalas = bdNuvem.depositosEscalas;
+          if (bdNuvem.proximoIdDepositoEscala) proximoIdDepositoEscala = bdNuvem.proximoIdDepositoEscala;
           
           atualizarTelas(); 
       }
