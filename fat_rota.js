@@ -218,20 +218,31 @@ function formatarDataBR(isoString) {
   return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : isoString;
 }
 
-const converterParaISO = (dataStr) => {
+// NOVA FUNÇÃO GLOBAL E SEGURA
+function converterParaISO(dataStr) {
     if (!dataStr || dataStr === '-') return null;
-    let str = String(dataStr).trim();
-    if (str.includes('-') && str.split('-')[0].length === 4) return str.split('T')[0];
-    if (str.includes('/')) {
-        let p = str.split('/');
-        if (p.length === 3) return `${p[2]}-${p[1]}-${p[0]}`;
+    let str = String(dataStr).replace(/,/g, '').trim(); // Remove a vírgula
+    
+    // Procura o padrão de data no meio da string
+    let match = str.match(/(\d{1,4}[-/]\d{1,2}[-/]\d{1,4})/);
+    if (!match) return null;
+    
+    let dataLimpa = match[0];
+    if (dataLimpa.includes('-') && dataLimpa.split('-')[0].length === 4) return dataLimpa.split('T')[0];
+    if (dataLimpa.includes('/')) {
+        let p = dataLimpa.split('/');
+        let dia = p[0].padStart(2, '0');
+        let mes = p[1].padStart(2, '0');
+        let ano = p[2];
+        return `${ano}-${mes}-${dia}`;
     }
     return null;
-};
+}
 
+// CORREÇÃO: Limpa vírgulas e espaços
 function extrairDataAbreviada(dataRaw) {
   if (!dataRaw) return '-';
-  let str = String(dataRaw).trim();
+  let str = String(dataRaw).replace(/,/g, '').trim(); 
   
   if (str.match(/[a-zA-Z]/)) {
     let d = new Date(str);
@@ -815,14 +826,22 @@ async function salvarFechamentoEscalas() {
       return;
   }
 
-  let confirma = await cConfirm('Salvar Balanço Semanal (Rotas)', `Deseja salvar o fechamento atual e limpar as escalas/depósitos filtrados da tela?\n\nCrédito Utilizado: ${valTeto}\nValor Gasto: ${valCusto}`);
-  if (!confirma) return;
-
   let dataInicio = document.getElementById('filtroEscalaInicio').value;
   let dataFim = document.getElementById('filtroEscalaFim').value;
-  let periodo = (dataInicio && dataFim) ? `${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}` : 'Período Geral';
+  
+  // NOVA REGRA DE NOMENCLATURA DO PERÍODO
+  let periodo = 'Período Geral';
+  if (dataInicio && dataFim) {
+      periodo = `${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}`;
+  } else if (dataInicio) {
+      periodo = `A partir de ${formatarDataBR(dataInicio)}`;
+  } else if (dataFim) {
+      periodo = `Até ${formatarDataBR(dataFim)}`;
+  }
 
-  // SEPARA OS QUE VÃO EMBORA E OS QUE FICAM NA TELA
+  let confirma = await cConfirm('Salvar Balanço Semanal (Rotas)', `Deseja salvar o fechamento atual e limpar as escalas/depósitos filtrados da tela?\n\nPeríodo: ${periodo}\nCrédito Utilizado: ${valTeto}\nValor Gasto: ${valCusto}`);
+  if (!confirma) return;
+
   let escalasRemovidas = [];
   let escalasRestantes = [];
   escalasDiariasSalvas.forEach(e => {
@@ -857,7 +876,6 @@ async function salvarFechamentoEscalas() {
   });
   depositosEscalas = depositosRestantes;
 
-  // SALVA O HISTÓRICO COM OS DADOS ORIGINAIS DENTRO
   historicoEscalas.push({
       id: proximoIdHistoricoEscala++,
       dataRegistro: new Date().toLocaleDateString('pt-BR'),
@@ -866,8 +884,8 @@ async function salvarFechamentoEscalas() {
       valorGasto: numCusto,
       saldo: numTeto - numCusto,
       ticketMedio: converterParaNumero(valTicket),
-      escalasOriginais: escalasRemovidas, // <--- GUARDA AQUI
-      depositosOriginais: depositosRemovidos // <--- GUARDA AQUI
+      escalasOriginais: escalasRemovidas,
+      depositosOriginais: depositosRemovidos
   });
 
   renderizarTabelaEscalasSalvas();
@@ -903,7 +921,6 @@ function renderizarTabelaHistoricoEscalas() {
   });
 }
 
-// O BOTÃO DE EXCLUIR AGORA DEVOLVE OS DADOS ("CTRL+Z")
 async function excluirHistoricoEscala(idHist) {
   let confirma = await cConfirm('Restaurar Escalas?', 'Tem certeza que deseja apagar este histórico de rotas?\n\nOs lançamentos e depósitos utilizados nele retornarão intactos para a tela principal (Ctrl+Z).');
   if (confirma) {
@@ -1185,7 +1202,6 @@ async function salvarFechamentoSemanal() {
   let valorCreditoAbatido = 0;
   let infoDepositoStr = "";
   
-  // SEPARA O DEPÓSITO QUE VAI EMBORA E OS QUE FICAM
   let depositosRemovidos = [];
 
   if (resposta.selectedValue === 'TODOS' || resposta.selectedValue === '0') {
@@ -1211,7 +1227,7 @@ async function salvarFechamentoSemanal() {
     totalCredito: valorCreditoAbatido, 
     totalFaturas: custoAtualFiltradoGlobal, 
     saldo: saldoCalculado,
-    depositosOriginais: depositosRemovidos // <--- GUARDA AQUI
+    depositosOriginais: depositosRemovidos
   }); 
   
   recalcularTotalDepositosFinanceiro(); 
@@ -1274,7 +1290,6 @@ function renderizarTabelaFechamentosSalvos() {
   }
 }
 
-// O BOTÃO DE EXCLUIR AGORA DEVOLVE O DEPÓSITO ("CTRL+Z")
 async function excluirBalancoSemanal(idBal) {
   let confirma = await cConfirm('Restaurar Depósito?', 'Deseja excluir este histórico do Financeiro?\n\nO depósito de crédito que foi utilizado retornará para a sua carteira.');
   if (confirma) {
@@ -1338,6 +1353,25 @@ function imprimirRelatorio() {
   window.print();
   containerPrint.style.display = 'none';
 }
+
+// ==========================================
+// GATILHOS DO FILTRO DE ESCALAS (ROTAS)
+// ==========================================
+function limparFiltroEscalas() {
+    let fInicio = document.getElementById('filtroEscalaInicio');
+    let fFim = document.getElementById('filtroEscalaFim');
+    if (fInicio) fInicio.value = '';
+    if (fFim) fFim.value = '';
+    renderizarTabelaEscalasSalvas();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    let inputEscalaInicio = document.getElementById('filtroEscalaInicio');
+    let inputEscalaFim = document.getElementById('filtroEscalaFim');
+    
+    if(inputEscalaInicio) inputEscalaInicio.addEventListener('change', renderizarTabelaEscalasSalvas);
+    if(inputEscalaFim) inputEscalaFim.addEventListener('change', renderizarTabelaEscalasSalvas);
+});
 
 // ==========================================
 // MOTOR DE SINCRONIZAÇÃO EM TEMPO REAL (3 segundos)
